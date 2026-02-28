@@ -4,10 +4,15 @@ Real-time form analysis: keypoints, joint angles, fault detection, rep counting.
 """
 import base64
 import math
+import os
 import httpx
 from config import get_settings
 
 settings = get_settings()
+
+# Set Vision Agents credentials
+os.environ['VISIONAGENTS_API_KEY'] = settings.visionagents_api_key
+os.environ['VISIONAGENTS_SECRET_KEY'] = settings.visionagents_secret_key
 
 # Supported exercises and their key joints to monitor
 EXERCISE_JOINTS = {
@@ -109,9 +114,12 @@ async def analyze_frame(
                 keypoints = data.get("keypoints", {})
             else:
                 # Fallback: return empty analysis
+                print(f"[VisionAgents] API returned status {resp.status_code}: {resp.text}")
                 return _empty_analysis(session_state)
     except Exception as e:
-        print(f"[VisionAgents] Error: {e}")
+        print(f"[VisionAgents] Error calling API: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return _empty_analysis(session_state)
 
     # ── Compute joint angles ───────────────────────────────────────────────

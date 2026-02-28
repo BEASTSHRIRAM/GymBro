@@ -29,10 +29,18 @@ class Settings(BaseSettings):
 
     # VisionAgents
     visionagents_api_key: str = ""
+    visionagents_secret_key: str = ""
     visionagents_base_url: str = "https://api.visionagents.ai"
 
     # Deepgram
     deepgram_api_key: str = ""
+
+    # ElevenLabs
+    elevenlabs_api_key: str = ""
+
+    # Stream Video
+    stream_api_key: str = ""
+    stream_api_secret: str = ""
 
     # Stripe (placeholder)
     stripe_secret_key: str = ""
@@ -47,6 +55,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra env vars like api_key, api_secret from Stream SDK
 
 
 @lru_cache()

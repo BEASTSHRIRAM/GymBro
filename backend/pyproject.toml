@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gymbro-backend"
+version = "0.1.0"
+description = "GymBro AI Gym Trainer Backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.109.2",
+    "uvicorn[standard]>=0.27.1",
+    "motor>=3.3.2",
+    "pymongo>=4.6.1",
+    "pydantic[email]>=2.6.1",
+    "pydantic-settings>=2.2.1",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt<5",
+    "python-multipart>=0.0.9",
+    "python-dotenv>=1.1.1",
+    "httpx>=0.27.0",
+    "websockets>=12.0",
+    "aiofiles>=23.2.1",
+    "aiosmtplib==3.0.1",
+    "numpy>=2.2.6",
+    "python-dateutil==2.9.0",
+    "Pillow>=10.0.0",
+    "vision-agents[getstream,gemini,deepgram,elevenlabs,ultralytics]>=0.3.0",
+    "stream-chat>=4.0.0",
+]
+
+[tool.setuptools]
+py-modules = []

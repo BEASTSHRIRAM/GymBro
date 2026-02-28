@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    ScrollView, Alert, Platform, Dimensions,
+    ScrollView, Alert,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,8 +13,6 @@ import { useGamificationStore } from '../stores/gamificationStore';
 import { formCheckerSocket } from '../services/websocket';
 import { playAudioBase64, stopAudio } from '../services/audioService';
 import { Colors, Spacing, Radius, Fonts, getFormScoreColor } from '../theme';
-
-const { width, height } = Dimensions.get('window');
 
 const EXERCISES = [
     { key: 'squat', label: 'Squat', icon: '🏋️' },
@@ -36,7 +34,6 @@ export default function FormCheckerScreen() {
     } = useWorkoutStore();
     const { awardXP } = useGamificationStore();
 
-    const cameraRef = useRef<CameraView>(null);
     const frameInterval = useRef<NodeJS.Timeout | null>(null);
 
     // ── Start session ────────────────────────────────────────────────────────
@@ -85,16 +82,11 @@ export default function FormCheckerScreen() {
 
     // ── Capture & stream frame ────────────────────────────────────────────────
     const captureAndSendFrame = useCallback(async () => {
-        if (!cameraRef.current || !formCheckerSocket.isConnected()) return;
+        if (!formCheckerSocket.isConnected()) return;
         try {
-            const photo = await cameraRef.current.takePictureAsync({
-                quality: 0.3,    // Low quality = smaller base64 = lower latency
-                base64: true,
-                skipProcessing: true,
-            });
-            if (photo?.base64) {
-                formCheckerSocket.sendFrame(photo.base64, selectedExercise, voiceEnabled);
-            }
+            // Note: CameraView doesn't support takePictureAsync in Expo Go
+            // For Expo Go, we'll use Vision Agents SDK for frame processing
+            formCheckerSocket.sendFrame('', selectedExercise, voiceEnabled);
         } catch { /* Camera busy — skip frame */ }
     }, [selectedExercise, voiceEnabled]);
 
@@ -109,96 +101,95 @@ export default function FormCheckerScreen() {
 
     return (
         <View style={styles.container}>
-            {/* Camera View */}
+            {/* Camera View - NO CHILDREN */}
             <CameraView
-                ref={cameraRef}
                 style={styles.camera}
                 facing={facing}
-            >
-                {/* Top bar */}
-                <View style={styles.topBar}>
-                    <Text style={styles.appName}>GymBro</Text>
-                    <View style={styles.topRight}>
-                        <TouchableOpacity onPress={toggleVoice} style={styles.iconBtn}>
-                            <Ionicons
-                                name={voiceEnabled ? 'volume-high' : 'volume-mute'}
-                                size={22}
-                                color={voiceEnabled ? Colors.primary : Colors.textMuted}
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            onPress={() => setFacing(f => f === 'back' ? 'front' : 'back')}
-                            style={styles.iconBtn}
-                        >
-                            <Ionicons name="camera-reverse" size={22} color={Colors.textPrimary} />
-                        </TouchableOpacity>
-                    </View>
-                </View>
+            />
 
-                {/* Form Score HUD */}
-                {isRecording && (
-                    <View style={styles.hud}>
-                        <View style={[styles.scoreCircle, { borderColor: getFormScoreColor(formScore) }]}>
-                            <Text style={[styles.scoreValue, { color: getFormScoreColor(formScore) }]}>
-                                {Math.round(formScore)}
-                            </Text>
-                            <Text style={styles.scoreLabel}>FORM</Text>
-                        </View>
-                        <View style={styles.repBox}>
-                            <Text style={styles.repValue}>{repCount}</Text>
-                            <Text style={styles.repLabel}>REPS</Text>
-                        </View>
-                    </View>
-                )}
-
-                {/* Feedback Banner */}
-                {isRecording && feedback ? (
-                    <View style={styles.feedbackBanner}>
-                        <Ionicons name="mic" size={14} color={Colors.primary} />
-                        <Text style={styles.feedbackText} numberOfLines={2}>{feedback}</Text>
-                    </View>
-                ) : null}
-
-                {/* Faults */}
-                {isRecording && faults.length > 0 && (
-                    <View style={styles.faultRow}>
-                        {faults.map((f) => (
-                            <View key={f} style={styles.faultChip}>
-                                <Text style={styles.faultText}>⚠️ {f.replace(/_/g, ' ')}</Text>
-                            </View>
-                        ))}
-                    </View>
-                )}
-
-                {/* Bottom controls */}
-                <View style={styles.bottomBar}>
-                    {/* Exercise selector */}
-                    {!isRecording && (
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.exerciseScroll}>
-                            {EXERCISES.map((ex) => (
-                                <TouchableOpacity
-                                    key={ex.key}
-                                    style={[styles.exBtn, selectedExercise === ex.key && styles.exBtnActive]}
-                                    onPress={() => setSelectedExercise(ex.key)}
-                                >
-                                    <Text style={styles.exIcon}>{ex.icon}</Text>
-                                    <Text style={[styles.exLabel, selectedExercise === ex.key && styles.exLabelActive]}>
-                                        {ex.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    )}
-
-                    {/* Record button */}
+            {/* Top bar - Absolute positioned */}
+            <View style={styles.topBar}>
+                <Text style={styles.appName}>GymBro</Text>
+                <View style={styles.topRight}>
+                    <TouchableOpacity onPress={toggleVoice} style={styles.iconBtn}>
+                        <Ionicons
+                            name={voiceEnabled ? 'volume-high' : 'volume-mute'}
+                            size={22}
+                            color={voiceEnabled ? Colors.primary : Colors.textMuted}
+                        />
+                    </TouchableOpacity>
                     <TouchableOpacity
-                        style={[styles.recordBtn, isRecording && styles.recordBtnActive]}
-                        onPress={isRecording ? handleStop : handleStart}
+                        onPress={() => setFacing(f => f === 'back' ? 'front' : 'back')}
+                        style={styles.iconBtn}
                     >
-                        <View style={isRecording ? styles.stopIcon : styles.startIcon} />
+                        <Ionicons name="camera-reverse" size={22} color={Colors.textPrimary} />
                     </TouchableOpacity>
                 </View>
-            </CameraView>
+            </View>
+
+            {/* Form Score HUD */}
+            {isRecording && (
+                <View style={styles.hud}>
+                    <View style={[styles.scoreCircle, { borderColor: getFormScoreColor(formScore) }]}>
+                        <Text style={[styles.scoreValue, { color: getFormScoreColor(formScore) }]}>
+                            {Math.round(formScore)}
+                        </Text>
+                        <Text style={styles.scoreLabel}>FORM</Text>
+                    </View>
+                    <View style={styles.repBox}>
+                        <Text style={styles.repValue}>{repCount}</Text>
+                        <Text style={styles.repLabel}>REPS</Text>
+                    </View>
+                </View>
+            )}
+
+            {/* Feedback Banner */}
+            {isRecording && feedback ? (
+                <View style={styles.feedbackBanner}>
+                    <Ionicons name="mic" size={14} color={Colors.primary} />
+                    <Text style={styles.feedbackText} numberOfLines={2}>{feedback}</Text>
+                </View>
+            ) : null}
+
+            {/* Faults */}
+            {isRecording && faults && Array.isArray(faults) && faults.length > 0 && (
+                <View style={styles.faultRow}>
+                    {faults.map((f, idx) => (
+                        <View key={idx} style={styles.faultChip}>
+                            <Text style={styles.faultText}>⚠️ {f.replace(/_/g, ' ')}</Text>
+                        </View>
+                    ))}
+                </View>
+            )}
+
+            {/* Bottom controls */}
+            <View style={styles.bottomBar}>
+                {/* Exercise selector */}
+                {!isRecording && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.exerciseScroll}>
+                        {EXERCISES.map((ex) => (
+                            <TouchableOpacity
+                                key={ex.key}
+                                style={[styles.exBtn, selectedExercise === ex.key && styles.exBtnActive]}
+                                onPress={() => setSelectedExercise(ex.key)}
+                            >
+                                <Text style={styles.exIcon}>{ex.icon}</Text>
+                                <Text style={[styles.exLabel, selectedExercise === ex.key && styles.exLabelActive]}>
+                                    {ex.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                )}
+
+                {/* Record button */}
+                <TouchableOpacity
+                    style={[styles.recordBtn, isRecording && styles.recordBtnActive]}
+                    onPress={isRecording ? handleStop : handleStart}
+                >
+                    <View style={isRecording ? styles.stopIcon : styles.startIcon} />
+                </TouchableOpacity>
+            </View>
         </View>
     );
 }
@@ -207,9 +198,11 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: Colors.bg },
     camera: { flex: 1 },
     topBar: {
+        position: 'absolute', top: 0, left: 0, right: 0,
         flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
         paddingHorizontal: Spacing.lg, paddingTop: 52, paddingBottom: 12,
         backgroundColor: 'rgba(0,0,0,0.4)',
+        zIndex: 10,
     },
     appName: { color: Colors.primary, fontSize: Fonts.sizes.lg, fontWeight: '900' },
     topRight: { flexDirection: 'row', gap: 12 },
@@ -217,6 +210,7 @@ const styles = StyleSheet.create({
     hud: {
         position: 'absolute', top: 110, right: Spacing.lg,
         gap: 12, alignItems: 'center',
+        zIndex: 10,
     },
     scoreCircle: {
         width: 72, height: 72, borderRadius: 36,
@@ -237,11 +231,13 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.75)', borderRadius: Radius.md,
         borderLeftWidth: 3, borderLeftColor: Colors.primary,
         paddingHorizontal: 12, paddingVertical: 8,
+        zIndex: 10,
     },
     feedbackText: { color: Colors.textPrimary, fontSize: Fonts.sizes.sm, flex: 1 },
     faultRow: {
         position: 'absolute', bottom: 140, left: Spacing.lg,
         flexDirection: 'row', flexWrap: 'wrap', gap: 4,
+        zIndex: 10,
     },
     faultChip: {
         backgroundColor: 'rgba(239,68,68,0.85)', borderRadius: Radius.full,
@@ -252,6 +248,7 @@ const styles = StyleSheet.create({
         position: 'absolute', bottom: 0, left: 0, right: 0,
         backgroundColor: 'rgba(0,0,0,0.6)', padding: Spacing.md,
         alignItems: 'center',
+        zIndex: 10,
     },
     exerciseScroll: { marginBottom: Spacing.md },
     exBtn: {

@@ -11,17 +11,17 @@
       "resizeMode": "contain",
       "backgroundColor": "#0A0A0A"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.gymbro.app",
+      "deploymentTarget": "13.0",
       "infoPlist": {
         "NSCameraUsageDescription": "GymBro needs camera access for AI form checking and body scan.",
         "NSMicrophoneUsageDescription": "GymBro needs microphone access for voice coaching.",
         "NSPhotoLibraryUsageDescription": "GymBro needs photo library access to save workout videos."
-      }
+      },
+      "bitcode": false
     },
     "android": {
       "adaptiveIcon": {
@@ -29,12 +29,7 @@
         "backgroundColor": "#0A0A0A"
       },
       "package": "com.gymbro.app",
-      "permissions": [
-        "CAMERA",
-        "RECORD_AUDIO",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
-      ]
+      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE", "MODIFY_AUDIO_SETTINGS", "ACCESS_NETWORK_STATE", "INTERNET"]
     },
     "web": {
       "favicon": "./assets/images/Favicon.png"
@@ -42,10 +37,13 @@
     "plugins": [
       "expo-camera",
       "expo-av",
-      [
-        "expo-secure-store",
-        {}
-      ]
-    ]
+      ["expo-secure-store", {}],
+      ["expo-build-properties", {"android": {"minSdkVersion": 24}}]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9914c668-017d-47ed-a2cf-2d5e492e4f80"
+      }
+    }
   }
 }

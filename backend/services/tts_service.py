@@ -1,41 +1,45 @@
 """
-GymBro — Deepgram TTS Service
-Converts coaching text to audio bytes using Deepgram's TTS API.
+GymBro — ElevenLabs TTS Service
+Converts coaching text to audio bytes using ElevenLabs' TTS API.
 """
 import httpx
 from config import get_settings
 
 settings = get_settings()
 
-DEEPGRAM_TTS_URL = "https://api.deepgram.com/v1/speak"
+ELEVENLABS_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech"
 
 
-async def text_to_speech(text: str, voice: str = "aura-asteria-en") -> bytes:
+async def text_to_speech(text: str, voice_id: str = "21m00Tcm4TlvDq8ikWAM") -> bytes:
     """
-    Convert text to speech using Deepgram TTS REST API.
+    Convert text to speech using ElevenLabs TTS REST API.
 
     Args:
         text: Coaching feedback text
-        voice: Deepgram voice model (default: aura-asteria-en — female, clear)
+        voice_id: ElevenLabs voice ID (default: Rachel — clear, professional)
 
     Returns:
         Raw MP3 audio bytes to stream to the client
     """
     headers = {
-        "Authorization": f"Token {settings.deepgram_api_key}",
+        "xi-api-key": settings.elevenlabs_api_key,
         "Content-Type": "application/json",
     }
-    params = {
-        "model": voice,
-        "encoding": "mp3",
+    payload = {
+        "text": text,
+        "model_id": "eleven_monolingual_v1",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+        }
     }
-    payload = {"text": text}
+
+    url = f"{ELEVENLABS_TTS_URL}/{voice_id}"
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
-            DEEPGRAM_TTS_URL,
+            url,
             headers=headers,
-            params=params,
             json=payload,
         )
         response.raise_for_status()
@@ -44,10 +48,10 @@ async def text_to_speech(text: str, voice: str = "aura-asteria-en") -> bytes:
 
 async def get_coaching_audio(feedback: str) -> bytes:
     """Wrapper: generate coaching audio with fallback."""
-    if not settings.deepgram_api_key:
+    if not settings.elevenlabs_api_key:
         return b""  # graceful fallback — no audio
     try:
         return await text_to_speech(feedback)
     except Exception as e:
-        print(f"[TTS] Deepgram error: {e}")
+        print(f"[TTS] ElevenLabs error: {e}")
         return b""

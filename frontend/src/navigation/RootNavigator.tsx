@@ -22,15 +22,19 @@ import OTPScreen from '../screens/auth/OTPScreen';
 // App screens
 import HomeScreen from '../screens/HomeScreen';
 import FormCheckerScreen from '../screens/FormCheckerScreen';
+import VideoCallFormCheckerScreen from '../screens/VideoCallFormCheckerScreen';
 import StrengthScreen from '../screens/StrengthScreen';
 import DietScreen from '../screens/DietScreen';
 import BodyScanScreen from '../screens/BodyScanScreen';
 import GamificationScreen from '../screens/GamificationScreen';
 import CoachesScreen from '../screens/CoachesScreen';
+import ProfileScreen from '../screens/ProfileScreen';
+import ProfileEditor from '../screens/ProfileEditor';
 
 const AuthStack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 const Tab = createBottomTabNavigator();
+const ProfileStack = createNativeStackNavigator();
 
 // ── Bottom Tabs ───────────────────────────────────────────────────────────────
 function BottomTabs() {
@@ -69,6 +73,16 @@ function BottomTabs() {
     );
 }
 
+// ── Profile Stack ─────────────────────────────────────────────────────────────
+function ProfileStackNavigator() {
+    return (
+        <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
+            <ProfileStack.Screen name="ProfileMain" component={ProfileScreen} />
+            <ProfileStack.Screen name="ProfileEditor" component={ProfileEditor} />
+        </ProfileStack.Navigator>
+    );
+}
+
 // ── Drawer Navigator ──────────────────────────────────────────────────────────
 function AppDrawer() {
     return (
@@ -88,6 +102,16 @@ function AppDrawer() {
                 options={{ title: 'GymBro', drawerLabel: ' Home' }}
             />
             <Drawer.Screen
+                name="Profile"
+                component={ProfileStackNavigator}
+                options={{
+                    drawerLabel: 'Profile',
+                    drawerIcon: ({ color, size }) => (
+                        <Ionicons name="person-outline" size={size} color={color} />
+                    ),
+                }}
+            />
+            <Drawer.Screen
                 name="BodyScan"
                 component={BodyScanScreen}
                 options={{ drawerLabel: ' AI Body Scan' }}
@@ -101,6 +125,16 @@ function AppDrawer() {
                 name="Coaches"
                 component={CoachesScreen}
                 options={{ drawerLabel: 'Find Coaches' }}
+            />
+            <Drawer.Screen
+                name="VideoCallTrainer"
+                component={VideoCallFormCheckerScreen}
+                options={{
+                    drawerLabel: 'Video Call Trainer',
+                    drawerIcon: ({ color, size }) => (
+                        <Ionicons name="videocam" size={size} color={color} />
+                    ),
+                }}
             />
         </Drawer.Navigator>
     );

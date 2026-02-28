@@ -8,7 +8,7 @@ from google.genai import types
 from config import get_settings
 
 settings = get_settings()
-_MODEL = "gemini-2.0-flash"
+_MODEL = "gemini-3-flash-preview"
 _client = None
 
 
@@ -54,3 +54,146 @@ async def generate_form_feedback_narrative(faults: list[str], exercise: str) -> 
 Give ONE coaching cue (max 15 words). Direct, actionable."""
     response = await _get_client().aio.models.generate_content(model=_MODEL, contents=prompt)
     return response.text.strip().strip('"')
+
+
+
+async def generate_workout_split(user_stats: dict) -> dict:
+    """
+    Generate a personalized workout split using Gemini AI.
+    
+    Args:
+        user_stats: Dictionary containing age, weight, height, goal, activity_level
+        
+    Returns:
+        Dictionary containing structured workout split with days, exercises, sets, reps, rest periods
+        
+    Raises:
+        TimeoutError: If request exceeds 10 seconds
+        ValueError: If response is invalid or cannot be parsed
+        Exception: For other API errors
+    """
+    import asyncio
+    
+    # Extract user stats
+    age = user_stats.get("age")
+    weight = user_stats.get("weight")
+    height = user_stats.get("height")
+    goal = user_stats.get("goal")
+    activity_level = user_stats.get("activity_level")
+    
+    # Construct the prompt with all required user stats
+    prompt = f"""You are a professional fitness coach. Generate a personalized workout split for a user with the following stats:
+
+- Age: {age} years
+- Weight: {weight} kg
+- Height: {height} cm
+- Fitness Goal: {goal}
+- Activity Level: {activity_level}
+
+Create a structured weekly workout split that includes:
+1. Optimal training frequency (3-6 days per week)
+2. Muscle group distribution across days
+3. Specific exercises with sets, reps, and rest periods
+4. Progressive overload recommendations
+
+Return the response in the following JSON format (no markdown, just JSON):
+{{
+  "split_name": "string",
+  "frequency": "string (e.g., '5 days per week')",
+  "days": [
+    {{
+      "day_name": "string (e.g., 'Day 1: Chest & Triceps')",
+      "exercises": [
+        {{
+          "name": "string",
+          "sets": number,
+          "reps": "string (e.g., '8-10')",
+          "rest_seconds": number,
+          "notes": "string (optional)"
+        }}
+      ],
+      "notes": "string (optional)"
+    }}
+  ],
+  "notes": "string (optional general notes)"
+}}"""
+    
+    # Retry logic: 1 retry on failure
+    max_attempts = 2
+    last_error = None
+    
+    for attempt in range(max_attempts):
+        try:
+            # Implement 10-second timeout
+            response = await asyncio.wait_for(
+                _get_client().aio.models.generate_content(
+                    model=_MODEL,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(temperature=0.7),
+                ),
+                timeout=10.0
+            )
+            
+            # Parse and validate Gemini response
+            raw = response.text.strip().lstrip("```json").lstrip("```").rstrip("```")
+            workout_split = json.loads(raw)
+            
+            # Validate the structure
+            if not isinstance(workout_split, dict):
+                raise ValueError("Response is not a dictionary")
+            
+            required_fields = ["split_name", "frequency", "days"]
+            for field in required_fields:
+                if field not in workout_split:
+                    raise ValueError(f"Missing required field: {field}")
+            
+            if not isinstance(workout_split["days"], list) or len(workout_split["days"]) == 0:
+                raise ValueError("Days must be a non-empty list")
+            
+            # Validate each day structure
+            for day in workout_split["days"]:
+                if not isinstance(day, dict):
+                    raise ValueError("Each day must be a dictionary")
+                if "day_name" not in day or "exercises" not in day:
+                    raise ValueError("Each day must have day_name and exercises")
+                if not isinstance(day["exercises"], list) or len(day["exercises"]) == 0:
+                    raise ValueError("Each day must have a non-empty exercises list")
+                
+                # Validate each exercise structure
+                for exercise in day["exercises"]:
+                    if not isinstance(exercise, dict):
+                        raise ValueError("Each exercise must be a dictionary")
+                    required_exercise_fields = ["name", "sets", "reps", "rest_seconds"]
+                    for field in required_exercise_fields:
+                        if field not in exercise:
+                            raise ValueError(f"Exercise missing required field: {field}")
+            
+            # If validation passes, return the workout split
+            return workout_split
+            
+        except asyncio.TimeoutError:
+            last_error = TimeoutError("Workout split generation timed out after 10 seconds")
+            if attempt < max_attempts - 1:
+                continue  # Retry
+            raise last_error
+            
+        except json.JSONDecodeError as e:
+            last_error = ValueError(f"Failed to parse Gemini response as JSON: {str(e)}")
+            if attempt < max_attempts - 1:
+                continue  # Retry
+            raise last_error
+            
+        except ValueError as e:
+            last_error = e
+            if attempt < max_attempts - 1:
+                continue  # Retry
+            raise last_error
+            
+        except Exception as e:
+            last_error = Exception(f"Error generating workout split: {str(e)}")
+            if attempt < max_attempts - 1:
+                continue  # Retry
+            raise last_error
+    
+    # If we get here, all retries failed
+    raise last_error
