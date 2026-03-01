@@ -32,7 +32,6 @@ export default function LoginScreen({ navigation }: any) {
             >
                 {/* Logo */}
                 <View style={styles.logoRow}>
-                    <Text style={styles.logoIcon}>🏋️</Text>
                     <Text style={styles.logoText}>GymBro</Text>
                 </View>
                 <Text style={styles.tagline}>Your AI Personal Trainer</Text>

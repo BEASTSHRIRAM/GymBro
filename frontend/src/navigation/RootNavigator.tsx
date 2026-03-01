@@ -13,6 +13,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from '../stores/authStore';
 import { Colors } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
+import { Alert, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+    DrawerContentScrollView,
+    DrawerItemList,
+} from '@react-navigation/drawer';
 
 // Auth screens
 import LoginScreen from '../screens/auth/LoginScreen';
@@ -30,6 +35,8 @@ import GamificationScreen from '../screens/GamificationScreen';
 import CoachesScreen from '../screens/CoachesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import ProfileEditor from '../screens/ProfileEditor';
+import WorkoutSplitScreen from '../screens/WorkoutSplitScreen';
+import MusicScreen from '../screens/MusicScreen';
 
 const AuthStack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -42,9 +49,10 @@ function BottomTabs() {
     type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
     const TAB_ICONS: Record<string, IoniconsName> = {
         Home: 'home',
-        'Form Check': 'camera',
+        'AI Trainer': 'videocam',
         Diet: 'nutrition',
         Strength: 'fitness',
+        'My Split': 'barbell',
     };
 
     return (
@@ -66,9 +74,10 @@ function BottomTabs() {
             })}
         >
             <Tab.Screen name="Home" component={HomeScreen} />
-            <Tab.Screen name="Form Check" component={FormCheckerScreen} />
+            <Tab.Screen name="AI Trainer" component={VideoCallFormCheckerScreen} />
             <Tab.Screen name="Diet" component={DietScreen} />
             <Tab.Screen name="Strength" component={StrengthScreen} />
+            <Tab.Screen name="My Split" component={WorkoutSplitScreen} />
         </Tab.Navigator>
     );
 }
@@ -83,10 +92,68 @@ function ProfileStackNavigator() {
     );
 }
 
+// ── Custom Drawer Content ─────────────────────────────────────────────────────
+function CustomDrawerContent(props: any) {
+    const logout = useAuthStore((s) => s.logout);
+
+    const handleLogout = () => {
+        Alert.alert(
+            '😢 Are You Sure?',
+            "Don't leave your Bro!",
+            [
+                { text: 'Stay 💪', style: 'cancel' },
+                {
+                    text: 'Logout',
+                    style: 'destructive',
+                    onPress: () => logout(),
+                },
+            ]
+        );
+    };
+
+    return (
+        <View style={{ flex: 1 }}>
+            <DrawerContentScrollView {...props}>
+                <DrawerItemList {...props} />
+            </DrawerContentScrollView>
+            <View style={drawerStyles.logoutSection}>
+                <TouchableOpacity style={drawerStyles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
+                    <Ionicons name="log-out-outline" size={22} color="#EF4444" />
+                    <Text style={drawerStyles.logoutText}>Logout</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+}
+
+const drawerStyles = StyleSheet.create({
+    logoutSection: {
+        borderTopWidth: 1,
+        borderTopColor: '#2A2A2A',
+        padding: 16,
+        paddingBottom: 32,
+    },
+    logoutBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 10,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    },
+    logoutText: {
+        color: '#EF4444',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+});
+
 // ── Drawer Navigator ──────────────────────────────────────────────────────────
 function AppDrawer() {
     return (
         <Drawer.Navigator
+            drawerContent={(props) => <CustomDrawerContent {...props} />}
             screenOptions={{
                 headerShown: false,
                 drawerStyle: { backgroundColor: Colors.card, width: 280 },
@@ -127,12 +194,12 @@ function AppDrawer() {
                 options={{ drawerLabel: 'Find Coaches' }}
             />
             <Drawer.Screen
-                name="VideoCallTrainer"
-                component={VideoCallFormCheckerScreen}
+                name="YourMusic"
+                component={MusicScreen}
                 options={{
-                    drawerLabel: 'Video Call Trainer',
+                    drawerLabel: 'Your Music',
                     drawerIcon: ({ color, size }) => (
-                        <Ionicons name="videocam" size={size} color={color} />
+                        <Ionicons name="musical-notes" size={size} color={color} />
                     ),
                 }}
             />

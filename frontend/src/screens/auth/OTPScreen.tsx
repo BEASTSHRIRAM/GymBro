@@ -12,22 +12,23 @@ import { Colors, Spacing, Radius, Fonts } from '../../theme';
 // Custom hook for countdown timer
 function useCountdown(initialSeconds: number) {
     const [seconds, setSeconds] = useState(initialSeconds);
-    
+
     useEffect(() => {
         if (seconds <= 0) return;
-        
+
         const timer = setInterval(() => {
             setSeconds(s => s - 1);
         }, 1000);
-        
+
         return () => clearInterval(timer);
     }, [seconds]);
-    
+
     return seconds;
 }
 
 export default function OTPScreen({ navigation, route }: any) {
     const email = route?.params?.email ?? '';
+    const password = route?.params?.password ?? '';
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
     const refs = useRef<any[]>([]);
     const { verifyOtp, isLoading, error, clearError, resendOtp, resendCooldown, resendSuccess, resendError, clearResendMessages } = useAuthStore();
@@ -59,6 +60,15 @@ export default function OTPScreen({ navigation, route }: any) {
         clearError();
         await verifyOtp(email, code);
         if (!useAuthStore.getState().error) {
+            // Auto-login after successful verification
+            if (password) {
+                try {
+                    await useAuthStore.getState().login(email, password);
+                    // login sets isAuthenticated=true → RootNavigator switches to AppDrawer
+                    return;
+                } catch { }
+            }
+            // Fallback: manual login
             Alert.alert('✅ Verified!', 'Your account is ready. Please log in.', [
                 { text: 'Go to Login', onPress: () => navigation.navigate('Login') },
             ]);
@@ -132,7 +142,7 @@ export default function OTPScreen({ navigation, route }: any) {
                     )}
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={[styles.resendBtn, (isLoading || countdown > 0) && styles.resendBtnDisabled]}
                     onPress={() => resendOtp(email)}
                     disabled={isLoading || countdown > 0}

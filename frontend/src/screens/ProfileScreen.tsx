@@ -14,7 +14,6 @@ import { useProfileStore } from '../stores/profileStore';
 import { ProfileBanner } from '../components/ProfileBanner';
 import { ActivitySection } from '../components/ActivitySection';
 import { AccountSettingsSection } from '../components/AccountSettingsSection';
-import { WorkoutSplitSection } from '../components/WorkoutSplitSection';
 import { Colors, Fonts, Spacing } from '../theme';
 
 /**
@@ -34,14 +33,12 @@ import { Colors, Fonts, Spacing } from '../theme';
 export default function ProfileScreen() {
   const navigation = useNavigation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  
+
   const {
     profile,
     isLoading,
     error,
     fetchProfile,
-    generateWorkoutSplit,
-    saveWorkoutSplit,
     clearError,
   } = useProfileStore();
 
@@ -75,28 +72,6 @@ export default function ProfileScreen() {
   // Handle workout split edit
   const handleEditWorkoutSplit = () => {
     console.log('Edit workout split');
-    // TODO: Navigate to workout split editor
-  };
-
-  // Handle AI workout split generation
-  const handleGenerateWorkoutSplit = async () => {
-    try {
-      await generateWorkoutSplit();
-    } catch (error) {
-      // Error is already handled in the store
-      console.error('Failed to generate workout split:', error);
-    }
-  };
-
-  // Handle save workout split
-  const handleSaveWorkoutSplit = async () => {
-    if (profile?.workout_split) {
-      try {
-        await saveWorkoutSplit(profile.workout_split);
-      } catch (error) {
-        console.error('Failed to save workout split:', error);
-      }
-    }
   };
 
   // Loading state
@@ -164,17 +139,6 @@ export default function ProfileScreen() {
         {/* Account Settings Section */}
         <AccountSettingsSection onNavigate={handleNavigate} />
 
-        {/* Workout Split Section */}
-        <WorkoutSplitSection
-          workoutSplit={profile.workout_split}
-          isGenerating={isLoading}
-          onEdit={handleEditWorkoutSplit}
-          onGenerate={handleGenerateWorkoutSplit}
-          onSave={handleSaveWorkoutSplit}
-          onRegenerate={handleGenerateWorkoutSplit}
-          showSaveButtons={false}
-        />
-
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -193,7 +157,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
   },
-  
+
   // Center Container (Loading/Error States)
   centerContainer: {
     flex: 1,
@@ -229,7 +193,7 @@ const styles = StyleSheet.create({
     fontSize: Fonts.sizes.md,
     fontWeight: '600',
   },
-  
+
   // Error Banner
   errorBanner: {
     flexDirection: 'row',
@@ -248,7 +212,7 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     fontSize: Fonts.sizes.sm,
   },
-  
+
   // Bottom Spacing
   bottomSpacer: {
     height: Spacing.xl,

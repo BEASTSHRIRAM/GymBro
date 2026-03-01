@@ -1,6 +1,7 @@
 /**
  * Vision Agents WebSocket Service
  * Real-time streaming of camera frames to backend for AI pose detection + coaching
+ * + Voice query support via microphone recording
  */
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.29.188:8000';
@@ -9,6 +10,12 @@ const WS_BASE_URL = API_BASE_URL.replace('http', 'ws');
 export interface FrameMessage {
   type: 'frame';
   frame_base64: string;
+  timestamp: number;
+}
+
+export interface VoiceQueryMessage {
+  type: 'voice_query';
+  audio_base64: string;
   timestamp: number;
 }
 
@@ -22,10 +29,18 @@ export interface AnalysisResponse {
   timestamp: number;
 }
 
+export interface VoiceResponse {
+  type: 'voice_response';
+  transcript: string;
+  response: string;
+  audio_base64: string;
+}
+
 export interface SessionStartedResponse {
   type: 'session_started';
   session_id: string;
   message: string;
+  audio_base64?: string;
 }
 
 export interface SessionEndedResponse {
@@ -35,7 +50,11 @@ export interface SessionEndedResponse {
   feedback: string;
 }
 
-export type VisionAgentsMessage = AnalysisResponse | SessionStartedResponse | SessionEndedResponse;
+export type VisionAgentsMessage =
+  | AnalysisResponse
+  | VoiceResponse
+  | SessionStartedResponse
+  | SessionEndedResponse;
 
 class VisionAgentsWSService {
   private ws: WebSocket | null = null;
@@ -115,6 +134,25 @@ class VisionAgentsWSService {
     this.ws.send(JSON.stringify(message));
   }
 
+  /**
+   * Send a voice query (recorded audio) to the backend for STT + AI response.
+   */
+  sendVoiceQuery(audioBase64: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('[VisionAgentsWS] WebSocket not connected, cannot send voice query');
+      return;
+    }
+
+    const message: VoiceQueryMessage = {
+      type: 'voice_query',
+      audio_base64: audioBase64,
+      timestamp: Date.now(),
+    };
+
+    console.log(`[VisionAgentsWS] Sending voice query (${audioBase64.length} bytes)`);
+    this.ws.send(JSON.stringify(message));
+  }
+
   endSession(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
@@ -142,26 +180,6 @@ class VisionAgentsWSService {
 
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
-  }
-
-  async playAudio(audioBase64: string): Promise<void> {
-    if (!audioBase64) return;
-    
-    try {
-      // Convert base64 to blob
-      const binaryString = atob(audioBase64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: 'audio/mpeg' });
-      
-      // Create audio element and play
-      const audio = new Audio(URL.createObjectURL(blob));
-      await audio.play();
-    } catch (e) {
-      console.error('[VisionAgentsWS] Audio playback error:', e);
-    }
   }
 }
 

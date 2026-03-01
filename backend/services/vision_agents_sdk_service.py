@@ -6,6 +6,7 @@ Based on: https://visionagents.ai/introduction/video-agents
 import os
 import base64
 import json
+import random
 from typing import Dict, List, Optional
 from datetime import datetime
 
@@ -32,17 +33,24 @@ class VisionAgentsSDKService:
     """Service for real-time pose estimation using Vision Agents Python SDK"""
     
     def __init__(self):
-        if VISION_AGENTS_AVAILABLE:
-            # Initialize YOLO Pose Processor
-            # This uses Ultralytics YOLO for pose estimation
-            self.pose_processor = ultralytics.YOLOPoseProcessor(
-                model_path="yolo11n-pose.pt"  # Lightweight YOLO11 pose model
-            )
-        else:
-            print("[VisionAgents] Running in MOCK MODE - using simulated pose detection")
-            self.pose_processor = None
-        
+        self.pose_processor = None
         self.frame_count = 0
+        self.use_mock = True  # Default to mock mode
+        
+        if VISION_AGENTS_AVAILABLE:
+            try:
+                # Initialize YOLO Pose Processor
+                self.pose_processor = ultralytics.YOLOPoseProcessor(
+                    model_path="yolo11n-pose.pt"
+                )
+                self.use_mock = False
+                print("[VisionAgents] Using real YOLO pose detection")
+            except Exception as e:
+                print(f"[VisionAgents] Failed to load YOLO model: {e}. Using mock mode.")
+                self.use_mock = True
+        else:
+            print("[VisionAgents] SDK not available. Using mock mode.")
+            self.use_mock = True
     
     async def analyze_frame(
         self,
@@ -62,11 +70,10 @@ class VisionAgentsSDKService:
             Analysis dict with keypoints, angles, faults, rep_count, form_score
         """
         try:
-            # If SDK not available, use mock data for testing
-            if not VISION_AGENTS_AVAILABLE:
+            if self.use_mock or not self.pose_processor:
                 return self._mock_analysis(exercise, session_state)
             
-            # Decode base64 image
+            # Real YOLO analysis (if SDK available)
             import io
             from PIL import Image
             import numpy as np
@@ -75,32 +82,19 @@ class VisionAgentsSDKService:
             image = Image.open(io.BytesIO(image_data))
             frame = np.array(image)
             
-            # Run YOLO pose estimation
             results = self.pose_processor.process_frame(frame)
             
             if not results or len(results) == 0:
                 return self._empty_analysis()
             
-            # Extract keypoints from first detected person
             keypoints = self._extract_keypoints(results[0])
             
             if not keypoints:
                 return self._empty_analysis()
             
-            # Calculate joint angles
             joint_angles = self._calculate_joint_angles(keypoints, exercise)
-            
-            # Detect form faults
             faults = self._detect_form_faults(keypoints, joint_angles, exercise)
-            
-            # Update rep count using temporal state machine
-            rep_count = self._update_rep_count(
-                joint_angles,
-                exercise,
-                session_state
-            )
-            
-            # Calculate form score (0-100)
+            rep_count = self._update_rep_count(joint_angles, exercise, session_state)
             form_score = self._calculate_form_score(faults, joint_angles, exercise)
             
             return {
@@ -115,9 +109,7 @@ class VisionAgentsSDKService:
             
         except Exception as e:
             print(f"[VisionAgentsSDK] Error analyzing frame: {e}")
-            import traceback
-            traceback.print_exc()
-            return self._empty_analysis()
+            return self._mock_analysis(exercise, session_state)
     
     def _extract_keypoints(self, result) -> dict:
         """Extract keypoints from YOLO pose result"""
@@ -389,8 +381,6 @@ class VisionAgentsSDKService:
     
     def _mock_analysis(self, exercise: str, session_state: dict) -> dict:
         """Return mock analysis for testing without Vision Agents SDK"""
-        import random
-        
         self.frame_count += 1
         
         # Simulate rep counting (every 30 frames = 1 rep at 500ms intervals = 15 seconds per rep)

@@ -13,7 +13,7 @@ import { Colors, Spacing, Radius, Fonts, getRankColor } from '../theme';
 const { width } = Dimensions.get('window');
 
 const FEATURES = [
-    { icon: '🎥', label: 'AI Form\nChecker', screen: 'Form Check', color: '#FF6B35', desc: 'Real-time pose' },
+    { icon: '🎥', label: 'AI\nTrainer', screen: 'AI Trainer', color: '#FF6B35', desc: 'Real-time pose' },
     { icon: '🥗', label: 'AI Diet\nCoach', screen: 'Diet', color: '#22C55E', desc: 'Custom meal plan' },
     { icon: '🔍', label: 'Body\nScan', screen: 'BodyScan', color: '#3B82F6', desc: 'Posture analysis' },
     { icon: '📈', label: 'Strength\nPredictor', screen: 'Strength', color: '#F59E0B', desc: '1RM projection' },
@@ -66,7 +66,7 @@ export default function HomeScreen({ navigation }: any) {
                     <Text style={styles.heroSub}>Real-time form • Diet • Body scan • Voice coaching</Text>
                     <TouchableOpacity
                         style={styles.heroCta}
-                        onPress={() => navigation.navigate('Form Check')}
+                        onPress={() => navigation.navigate('AI Trainer')}
                     >
                         <Text style={styles.heroCtaText}>🚀 Start AI Session</Text>
                     </TouchableOpacity>

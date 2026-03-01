@@ -15,17 +15,17 @@ const ACTIVITY_LEVELS = ['sedentary', 'light', 'moderate', 'active', 'very_activ
 // Custom hook for countdown timer
 function useCountdown(initialSeconds: number) {
     const [seconds, setSeconds] = useState(initialSeconds);
-    
+
     useEffect(() => {
         if (seconds <= 0) return;
-        
+
         const timer = setInterval(() => {
             setSeconds(s => s - 1);
         }, 1000);
-        
+
         return () => clearInterval(timer);
     }, [seconds]);
-    
+
     return seconds;
 }
 
@@ -60,9 +60,19 @@ export default function RegisterScreen({ navigation }: any) {
     });
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
     const [showPass, setShowPass] = useState(false);
+    const [showOtp, setShowOtp] = useState(false);
+    const [otpEmail, setOtpEmail] = useState('');
     const otpRefs = useRef<any[]>([]);
     const { register, verifyOtp, error, isLoading, clearError, pendingOtpEmail, setPendingOtpEmail, resendOtp, resendCooldown, resendSuccess, resendError, clearResendMessages } = useAuthStore();
     const countdown = useCountdown(resendCooldown);
+
+    // Sync with Zustand on mount (for when navigating back to Register)
+    useEffect(() => {
+        if (pendingOtpEmail && !showOtp) {
+            setShowOtp(true);
+            setOtpEmail(pendingOtpEmail);
+        }
+    }, [pendingOtpEmail]);
 
     // Auto-dismiss resend messages after 3 seconds
     useEffect(() => {
@@ -91,10 +101,10 @@ export default function RegisterScreen({ navigation }: any) {
             goal: form.goal, activity_level: form.activity_level,
         });
         const err = useAuthStore.getState().error;
-        // Go to OTP on success OR if email already registered (unverified account exists)
-        if (!err || err.toLowerCase().includes('already registered')) {
+        if (!err || err.toLowerCase().includes('already registered') || err.toLowerCase().includes('already exists')) {
+            // Registration succeeded or account already exists — navigate to OTP
             useAuthStore.getState().clearError();
-            setPendingOtpEmail(form.email);
+            navigation.navigate('OTP', { email: form.email, password: form.password });
         }
     };
 
@@ -112,29 +122,42 @@ export default function RegisterScreen({ navigation }: any) {
             Alert.alert('GymBro', 'Please enter the full 6-digit OTP');
             return;
         }
+        // Capture credentials before any state resets
+        const email = otpEmail || form.email;
+        const password = form.password;
         clearError();
-        await verifyOtp(pendingOtpEmail ?? form.email, code);
+        await verifyOtp(email, code);
         if (!useAuthStore.getState().error) {
-            setPendingOtpEmail(null);
-            Alert.alert('✅ Verified!', 'Your account is ready. Please log in.', [
-                { text: 'Go to Login', onPress: () => navigation.navigate('Login') },
-            ]);
+            // Auto-login after successful verification
+            try {
+                await useAuthStore.getState().login(email, password);
+                setPendingOtpEmail(null);
+                setShowOtp(false);
+                // login sets isAuthenticated=true → RootNavigator switches to AppDrawer
+            } catch {
+                setPendingOtpEmail(null);
+                setShowOtp(false);
+                // Fallback: manual login
+                Alert.alert('✅ Verified!', 'Your account is ready. Please log in.', [
+                    { text: 'Go to Login', onPress: () => navigation.navigate('Login') },
+                ]);
+            }
         }
     };
 
     // ── OTP Step UI ────────────────────────────────────────────────────────────
-    if (pendingOtpEmail) {
+    if (showOtp) {
         return (
             <LinearGradient colors={['#0A0A0A', '#111111']} style={styles.container}>
                 <View style={styles.otpInner}>
-                    <TouchableOpacity onPress={() => setPendingOtpEmail(null)} style={styles.back}>
+                    <TouchableOpacity onPress={() => { setShowOtp(false); setPendingOtpEmail(null); }} style={styles.back}>
                         <Ionicons name="arrow-back" size={24} color={Colors.primary} />
                     </TouchableOpacity>
                     <Text style={styles.otpIcon}>📧</Text>
                     <Text style={styles.heading}>Verify Your Email</Text>
                     <Text style={styles.sub}>
                         We sent a 6-digit code to{'\n'}
-                        <Text style={{ color: Colors.primary }}>{pendingOtpEmail}</Text>
+                        <Text style={{ color: Colors.primary }}>{otpEmail}</Text>
                     </Text>
                     {error && (
                         <View style={styles.errorBanner}>
@@ -177,9 +200,9 @@ export default function RegisterScreen({ navigation }: any) {
                         onPress={handleVerify} disabled={isLoading}>
                         {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>VERIFY OTP</Text>}
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={[styles.resendBtn, (isLoading || countdown > 0) && styles.resendBtnDisabled]}
-                        onPress={() => resendOtp(pendingOtpEmail ?? '')}
+                        onPress={() => resendOtp(otpEmail ?? '')}
                         disabled={isLoading || countdown > 0}
                     >
                         <Text style={[styles.resendBtnText, (isLoading || countdown > 0) && styles.resendBtnTextDisabled]}>

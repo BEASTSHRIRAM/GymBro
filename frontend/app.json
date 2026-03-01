@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#0A0A0A"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.gymbro.app",
@@ -29,7 +31,15 @@
         "backgroundColor": "#0A0A0A"
       },
       "package": "com.gymbro.app",
-      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE", "MODIFY_AUDIO_SETTINGS", "ACCESS_NETWORK_STATE", "INTERNET"]
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "MODIFY_AUDIO_SETTINGS",
+        "ACCESS_NETWORK_STATE",
+        "INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/images/Favicon.png"
@@ -37,8 +47,19 @@
     "plugins": [
       "expo-camera",
       "expo-av",
-      ["expo-secure-store", {}],
-      ["expo-build-properties", {"android": {"minSdkVersion": 24}}]
+      [
+        "expo-secure-store",
+        {}
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24
+          }
+        }
+      ],
+      "@stream-io/video-react-native-sdk"
     ],
     "extra": {
       "eas": {

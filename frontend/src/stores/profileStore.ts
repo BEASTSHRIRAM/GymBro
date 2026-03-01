@@ -59,18 +59,18 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     try {
       // Create form data for image upload
       const formData = new FormData();
-      
+
       // Extract file extension from URI
       const uriParts = imageUri.split('.');
       const fileType = uriParts[uriParts.length - 1];
-      
+
       // Create file object for upload
       const file = {
         uri: imageUri,
         name: `profile.${fileType}`,
         type: `image/${fileType}`,
       } as any;
-      
+
       formData.append('file', file);
 
       const { data } = await api.post<{ profile_picture_url: string }>(
@@ -107,10 +107,10 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const currentProfile = get().profile;
-      
+
       // Validate that we have all required user stats
-      if (!currentProfile?.age || !currentProfile?.height || !currentProfile?.weight || 
-          !currentProfile?.goal || !currentProfile?.activity_level) {
+      if (!currentProfile?.age || !currentProfile?.height || !currentProfile?.weight ||
+        !currentProfile?.goal || !currentProfile?.activity_level) {
         throw new Error('Please complete your profile information before generating a workout split');
       }
 
@@ -122,9 +122,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         activity_level: currentProfile.activity_level,
       };
 
+      console.log('[WorkoutSplit] Generating split with:', requestData);
       const { data } = await api.post<WorkoutSplit>(
         '/api/workout-split/generate',
-        requestData
+        requestData,
+        { timeout: 30000 } // Gemini needs more time
       );
 
       // Update profile with generated workout split
@@ -137,7 +139,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       });
     } catch (e: any) {
       const errorMessage = e.message || e.response?.data?.detail;
-      
+
       // Provide user-friendly error messages
       let displayError = 'Failed to generate workout split';
       if (errorMessage?.includes('timeout') || e.code === 'ECONNABORTED') {
@@ -147,7 +149,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       } else if (errorMessage) {
         displayError = errorMessage;
       }
-      
+
       set({
         error: displayError,
         isLoading: false,
@@ -160,7 +162,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       await api.put('/api/workout-split', split);
-      
+
       // Update profile with saved workout split
       const currentProfile = get().profile;
       if (currentProfile) {

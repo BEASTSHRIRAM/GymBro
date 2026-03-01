@@ -1,19 +1,28 @@
-// GymBro — AI Gym Trainer with Vision Agents
-// Real-time AI coaching with voice feedback
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+// GymBro — AI Gym Trainer with Vision Agents + Stream Video
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    ScrollView, Alert, ActivityIndicator,
+    ScrollView, Alert, ActivityIndicator, LayoutAnimation, Platform, UIManager,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import {
+    StreamVideo,
+    StreamVideoClient,
+    StreamCall,
+    CallContent,
+    Call,
+    CallingState,
+    callManager,
+} from '@stream-io/video-react-native-sdk';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../stores/authStore';
 import { useWorkoutStore } from '../stores/workoutStore';
 import { useGamificationStore } from '../stores/gamificationStore';
 import { Colors, Spacing, Radius, Fonts } from '../theme';
-import { visionAgentsWS } from '../services/visionAgentsWS';
+import api from '../services/api';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.29.188:8000';
+if (Platform.OS === 'android') {
+    UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
 
 const EXERCISES = [
     { key: 'squat', label: 'Squat', icon: '🏋️' },
@@ -22,516 +31,619 @@ const EXERCISES = [
     { key: 'shoulder_press', label: 'Shoulder Press', icon: '🎯' },
 ];
 
+const EXERCISE_COLORS: Record<string, string> = {
+    squat: '#FF6B35',
+    bench_press: '#3B82F6',
+    deadlift: '#22C55E',
+    shoulder_press: '#A855F7',
+};
+
+interface SessionSummary {
+    session_id: string;
+    exercise: string;
+    duration_seconds: number;
+    total_reps: number;
+    avg_form_score: number;
+    faults: string[];
+    timestamp: string;
+}
+
+function formatDuration(seconds: number) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}m ${s}s`;
+}
+
+function formatDate(iso: string) {
+    try {
+        const d = new Date(iso);
+        return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch { return iso; }
+}
+
+function SessionCard({ session }: { session: SessionSummary }) {
+    const [expanded, setExpanded] = useState(false);
+    const color = EXERCISE_COLORS[session.exercise] || Colors.primary;
+    const exerciseEmoji = EXERCISES.find(e => e.key === session.exercise)?.icon || '🏋️';
+    const score = session.avg_form_score;
+    const scoreColor = score >= 80 ? Colors.success : score >= 50 ? Colors.warning : Colors.error;
+
+    return (
+        <TouchableOpacity
+            style={styles.sessionCard}
+            onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setExpanded(e => !e);
+            }}
+            activeOpacity={0.8}
+        >
+            <View style={styles.sessionRow}>
+                <View style={[styles.exerciseDot, { backgroundColor: color }]}>
+                    <Text style={styles.exerciseDotIcon}>{exerciseEmoji}</Text>
+                </View>
+                <View style={styles.sessionInfo}>
+                    <Text style={styles.sessionExercise}>
+                        {session.exercise.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </Text>
+                    <Text style={styles.sessionMeta}>
+                        {formatDate(session.timestamp)} · {formatDuration(session.duration_seconds)}
+                    </Text>
+                </View>
+                <View style={styles.sessionRight}>
+                    {score > 0 && (
+                        <Text style={[styles.scoreChip, { color: scoreColor, borderColor: scoreColor + '40', backgroundColor: scoreColor + '15' }]}>
+                            {score.toFixed(0)}%
+                        </Text>
+                    )}
+                    <Ionicons
+                        name={expanded ? 'chevron-up' : 'chevron-down'}
+                        size={16} color={Colors.textMuted}
+                        style={{ marginLeft: 6 }}
+                    />
+                </View>
+            </View>
+
+            {expanded && (
+                <View style={styles.sessionDetails}>
+                    <View style={styles.statsRow}>
+                        <View style={styles.statBox}>
+                            <Text style={styles.statValue}>{session.total_reps || '—'}</Text>
+                            <Text style={styles.statLabel}>Reps</Text>
+                        </View>
+                        <View style={styles.statBox}>
+                            <Text style={styles.statValue}>{formatDuration(session.duration_seconds)}</Text>
+                            <Text style={styles.statLabel}>Duration</Text>
+                        </View>
+                        <View style={styles.statBox}>
+                            <Text style={[styles.statValue, { color: scoreColor }]}>
+                                {score > 0 ? `${score.toFixed(0)}%` : '—'}
+                            </Text>
+                            <Text style={styles.statLabel}>Form</Text>
+                        </View>
+                    </View>
+                    {session.faults && session.faults.length > 0 && (
+                        <View style={styles.faultsSection}>
+                            <Text style={styles.faultsTitle}>⚠️ Form notes:</Text>
+                            {session.faults.map((f, i) => (
+                                <Text key={i} style={styles.faultItem}>• {f}</Text>
+                            ))}
+                        </View>
+                    )}
+                    {(!session.faults || session.faults.length === 0) && score === 0 && (
+                        <Text style={styles.sessionNote}>
+                            Session recorded. Keep training to build your AI coaching history!
+                        </Text>
+                    )}
+                </View>
+            )}
+        </TouchableOpacity>
+    );
+}
+
 export default function VideoCallFormCheckerScreen() {
     const [isLoading, setIsLoading] = useState(false);
     const [isTraining, setIsTraining] = useState(false);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [selectedExercise, setSelectedExercise] = useState('squat');
-    const [trainerMessage, setTrainerMessage] = useState('');
     const [sessionDuration, setSessionDuration] = useState(0);
-    const [repCount, setRepCount] = useState(0);
-    const [formScore, setFormScore] = useState(0);
-    const [faults, setFaults] = useState<string[]>([]);
+    const [agentAvailable, setAgentAvailable] = useState<boolean | null>(null);
+
+    // Audio Routing State
+    const [targetAudioEndpoint, setTargetAudioEndpoint] = useState<'speaker' | 'earpiece' | undefined>();
+    const [targetAndroidDevice, setTargetAndroidDevice] = useState<string | undefined>();
+    const [audioDeviceStatus, setAudioDeviceStatus] = useState<any>();
+
+    // Recent sessions
+    const [sessions, setSessions] = useState<SessionSummary[]>([]);
+    const [sessionsLoading, setSessionsLoading] = useState(false);
+    const [showSessions, setShowSessions] = useState(false);
+
+    const [streamClient, setStreamClient] = useState<StreamVideoClient | null>(null);
+    const [activeCall, setActiveCall] = useState<Call | null>(null);
 
     const { user } = useAuthStore();
     const { startSession, endSession } = useWorkoutStore();
     const { awardXP } = useGamificationStore();
-    
-    const cameraRef = useRef<CameraView>(null);
-    const frameIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const [permission, requestPermission] = useCameraPermissions();
 
-    // Timer for session duration
     useEffect(() => {
-        let interval: NodeJS.Timeout;
-        if (isTraining) {
-            interval = setInterval(() => {
-                setSessionDuration(prev => prev + 1);
-            }, 1000);
-        }
-        return () => clearInterval(interval);
-    }, [isTraining]);
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            if (frameIntervalRef.current) {
-                clearInterval(frameIntervalRef.current);
-            }
-            if (isTraining) {
-                visionAgentsWS.disconnect();
-            }
+        const checkAgent = async () => {
+            try {
+                const { data } = await api.get('/gym-agent/status');
+                setAgentAvailable(data.available);
+            } catch { setAgentAvailable(false); }
         };
+        checkAgent();
+    }, []);
+
+    useEffect(() => {
+        if (Platform.OS === 'android') {
+            callManager.android.getAudioDeviceStatus().then(setAudioDeviceStatus);
+            const removeListener = callManager.android.addAudioDeviceChangeListener(setAudioDeviceStatus);
+            return () => removeListener();
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!isTraining) return;
+        const timer = setInterval(() => setSessionDuration(d => d + 1), 1000);
+        return () => clearInterval(timer);
     }, [isTraining]);
 
-    // ── Start AI training session ────────────────────────────────────────────
-    const handleStartTraining = async () => {
-        if (!user?.id) {
-            Alert.alert('Error', 'Please log in to start training');
-            return;
-        }
+    const formatTimer = (s: number) =>
+        `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
 
-        // Request camera permission
-        if (!permission?.granted) {
-            const { granted } = await requestPermission();
-            if (!granted) {
-                Alert.alert('Error', 'Camera permission is required for AI training');
-                return;
+    const loadSessions = useCallback(async () => {
+        setSessionsLoading(true);
+        try {
+            const { data } = await api.get('/gym-agent/sessions');
+            setSessions(data.sessions || []);
+        } catch (e) {
+            console.warn('[Sessions] Load failed:', e);
+        } finally {
+            setSessionsLoading(false);
+        }
+    }, []);
+
+    const toggleSessions = () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        if (!showSessions && sessions.length === 0) loadSessions();
+        setShowSessions(s => !s);
+    };
+
+    const handleStartTraining = async () => {
+        if (!user) { Alert.alert('Error', 'Please log in first'); return; }
+
+        // Optional pre-call audio routing prompt
+        let startEndpoint: 'speaker' | 'earpiece' | undefined;
+        let selectedAndroidDevice: string | undefined;
+
+        if (Platform.OS === 'android') {
+            try {
+                // Fetch real devices available to the system
+                const status = await callManager.android.getAudioDeviceStatus();
+                if (status.devices && status.devices.length > 0) {
+                    await new Promise<void>((resolve) => {
+                        const buttons = status.devices.slice(0, 3).map((d: string) => ({
+                            text: d,
+                            onPress: () => {
+                                startEndpoint = d.toLowerCase().includes('speaker') ? 'speaker' : 'earpiece';
+                                selectedAndroidDevice = d;
+                                setTargetAudioEndpoint(startEndpoint);
+                                setTargetAndroidDevice(d);
+                                resolve();
+                            }
+                        }));
+                        buttons.push({ text: "Default", onPress: () => resolve() });
+                        Alert.alert("Audio Output", "How are you listening to the coach?", buttons, { cancelable: false });
+                    });
+                }
+            } catch (e) {
+                console.warn('[GymAgent] Failed to fetch audio devices:', e);
             }
+        } else if (Platform.OS === 'ios') {
+            await new Promise<void>((resolve) => {
+                Alert.alert(
+                    "Audio Output",
+                    "How are you listening to the coach?",
+                    [
+                        { text: 'Speaker', onPress: () => { startEndpoint = 'speaker'; setTargetAudioEndpoint('speaker'); resolve(); } },
+                        { text: 'Earbuds/Headphones', onPress: () => { startEndpoint = 'earpiece'; setTargetAudioEndpoint('earpiece'); resolve(); } },
+                        { text: 'Default System', onPress: () => resolve() }
+                    ],
+                    { cancelable: false }
+                );
+            });
         }
 
         setIsLoading(true);
         try {
-            const sessionId = `va_${user.id}_${selectedExercise}_${Date.now()}`;
-            
-            // Connect WebSocket
-            await visionAgentsWS.connect(
-                sessionId,
-                user.id,
-                selectedExercise,
-                async (msg) => {
-                    if (msg.type === 'session_started') {
-                        setTrainerMessage(msg.message);
-                    } else if (msg.type === 'analysis') {
-                        setTrainerMessage(msg.feedback);
-                        setRepCount(msg.rep_count);
-                        setFormScore(msg.form_score);
-                        setFaults(msg.faults);
-                        // Play audio feedback
-                        if (msg.audio_base64) {
-                            await visionAgentsWS.playAudio(msg.audio_base64);
-                        }
-                    } else if (msg.type === 'session_ended') {
-                        Alert.alert(
-                            'Training Complete! 🎉',
-                            `Duration: ${Math.floor(sessionDuration / 60)}m ${sessionDuration % 60}s\nReps: ${msg.total_reps}\nForm Score: ${msg.avg_form_score.toFixed(1)}%\n\nFeedback: ${msg.feedback}`,
-                            [{ text: 'OK' }]
-                        );
-                    }
-                },
-                (err) => {
-                    console.error('[AITrainer] WS Error:', err);
-                    Alert.alert('Error', 'Connection failed: ' + err.message);
-                }
-            );
+            const { data } = await api.post('/gym-agent/start', { exercise: selectedExercise });
+            if (data.error) throw new Error(data.error);
+            const { session_id, call_id, call_type, stream_api_key } = data;
 
-            setSessionId(sessionId);
+            const client = new StreamVideoClient({
+                apiKey: stream_api_key,
+                user: {
+                    id: user.id,
+                    name: user.name || 'GymBro User',
+                    image: `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'U')}&background=ff6b35&color=fff`,
+                },
+                tokenProvider: async () => {
+                    const { data: tokenData } = await api.get('/api/stream/call-token', {
+                        params: { user_id: user.id, call_id },
+                    });
+                    return tokenData.token;
+                },
+            });
+
+            const call = client.call(call_type || 'default', call_id);
+
+            await call.join({ create: true });
+
+            try {
+                // If on Android and a specific hardware device was selected, lock it in immediately
+                if (Platform.OS === 'android' && selectedAndroidDevice) {
+                    callManager.android.selectAudioDevice(selectedAndroidDevice);
+                }
+            } catch (e) {
+                console.warn('[GymAgent] Failed to override native audio route post-join', e);
+            }
+            try {
+                await call.camera.enable();
+                await call.microphone.enable();
+            } catch (e) { console.warn('[GymAgent] Media enable (non-fatal):', e); }
+
+            setStreamClient(client);
+            setActiveCall(call);
+            setSessionId(session_id);
             setIsTraining(true);
             setSessionDuration(0);
-            startSession(selectedExercise, user.id);
-
-            // Start sending frames every 500ms
-            frameIntervalRef.current = setInterval(captureAndSendFrame, 500);
-
+            startSession(selectedExercise);
         } catch (error: any) {
-            console.error('[AITrainer] Start error:', error);
-            Alert.alert(
-                'Error',
-                error.message || 'Failed to start training'
-            );
+            console.error('[GymAgent] Start error:', error);
+            Alert.alert('Error', error.message || 'Failed to start training');
         } finally {
             setIsLoading(false);
         }
     };
 
-    // ── End AI training session ──────────────────────────────────────────────
     const handleEndTraining = async () => {
-        if (!sessionId) return;
+        setIsTraining(false);
+        setSessionDuration(0);
+        endSession();
 
+        const sid = sessionId;
+        const call = activeCall;
+        const client = streamClient;
+
+        setSessionId(null);
+        setActiveCall(null);
+        setStreamClient(null);
         setIsLoading(true);
+
         try {
-            // Stop sending frames immediately
-            if (frameIntervalRef.current) {
-                clearInterval(frameIntervalRef.current);
-                frameIntervalRef.current = null;
+            if (sid) {
+                try { await api.post('/gym-agent/end', { session_id: sid }); }
+                catch (e) { console.warn('[GymAgent] Backend end (non-fatal):', e); }
             }
+            if (call) {
+                try {
+                    if (call.state.callingState !== CallingState.LEFT) await call.leave();
+                } catch (e) { console.warn('[GymAgent] Leave (non-fatal):', e); }
+            }
+            if (client) {
+                try { await client.disconnectUser(); }
+                catch (e) { console.warn('[GymAgent] Disconnect (non-fatal):', e); }
+            }
+            try { await awardXP('workout_complete', 85); }
+            catch (e) { console.warn('[GymAgent] XP (non-fatal):', e); }
 
-            // Send end session message and wait for response
-            visionAgentsWS.endSession();
-            
-            // Give server time to process and send final message
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // Disconnect WebSocket
-            visionAgentsWS.disconnect();
-
-            // Award XP
-            const avgScore = formScore || 0;
-            await awardXP('workout_complete', avgScore);
-
-            // Reset state
-            setIsTraining(false);
-            setSessionId(null);
-            setTrainerMessage('');
-            setSessionDuration(0);
-            setRepCount(0);
-            setFormScore(0);
-            setFaults([]);
-            endSession();
-
-        } catch (error: any) {
-            console.error('[AITrainer] End error:', error);
-            Alert.alert(
-                'Error',
-                error.message || 'Failed to end training'
-            );
+            // Refresh sessions after training ends
+            await loadSessions();
+            setSessions(s => s); // trigger re-render
         } finally {
             setIsLoading(false);
         }
     };
 
-    // ── Capture & analyze frame ─────────────────────────────────────────────
-    const captureAndSendFrame = useCallback(async () => {
-        if (!sessionId || !visionAgentsWS.isConnected() || !cameraRef.current) return;
-        try {
-            // Capture frame from camera
-            const photo = await cameraRef.current.takePictureAsync({
-                base64: true,
-                quality: 0.5,
-                skipProcessing: true,
-            });
-            
-            if (photo?.base64) {
-                console.log(`[AITrainer] Sending frame (${photo.base64.length} bytes)`);
-                visionAgentsWS.sendFrame(photo.base64, Date.now());
-            } else {
-                console.warn('[AITrainer] No base64 data from camera');
+    useEffect(() => {
+        return () => {
+            if (activeCall?.state.callingState !== CallingState.LEFT) {
+                activeCall?.leave().catch(() => { });
             }
-        } catch (error) {
-            console.error('[AITrainer] Frame capture error:', error);
-        }
-    }, [sessionId]);
+            streamClient?.disconnectUser().catch(() => { });
+        };
+    }, [activeCall, streamClient]);
 
-    // ── Render training UI ───────────────────────────────────────────────────
-    if (isTraining && sessionId) {
+    // ── Training Call UI ─────────────────────────────────────────────────
+    if (isTraining && streamClient && activeCall) {
         return (
-            <View style={styles.trainingContainer}>
-                {/* Camera Feed */}
-                <CameraView
-                    ref={cameraRef}
-                    style={styles.cameraFeed}
-                    facing="front"
-                />
+            <StreamVideo client={streamClient}>
+                <StreamCall call={activeCall}>
+                    <View style={styles.trainingContainer}>
+                        <View style={styles.trainingHeader}>
+                            <View style={styles.headerLeft}>
+                                <View style={styles.liveDot} />
+                                <Text style={styles.headerLabel}>
+                                    {EXERCISES.find(e => e.key === selectedExercise)?.icon}{' '}
+                                    {EXERCISES.find(e => e.key === selectedExercise)?.label}
+                                </Text>
+                            </View>
+                            <Text style={styles.timerText}>{formatTimer(sessionDuration)}</Text>
+                        </View>
+                        <CallContent onHangupCallHandler={handleEndTraining} />
 
-                {/* Overlay: Header */}
-                <View style={styles.trainingHeader}>
-                    <View style={styles.liveIndicator} />
-                    <Text style={styles.trainingHeaderText}>
-                        {selectedExercise.replace('_', ' ').toUpperCase()}
-                    </Text>
-                    <Text style={styles.timerText}>
-                        {Math.floor(sessionDuration / 60)}:{String(sessionDuration % 60).padStart(2, '0')}
-                    </Text>
-                </View>
+                        {/* Audio Routing Toggle Button (Fallback for ICE Restarts) */}
+                        <TouchableOpacity
+                            style={styles.audioDeviceBtn}
+                            activeOpacity={0.7}
+                            onPress={async () => {
+                                try {
+                                    if (Platform.OS === 'ios') {
+                                        callManager.ios.showDeviceSelector();
+                                        return;
+                                    }
 
-                {/* Overlay: Trainer Message */}
-                <View style={styles.trainerMessageBox}>
-                    <Ionicons name="chatbubble-ellipses" size={32} color={Colors.primary} />
-                    <Text style={styles.trainerMessage}>{trainerMessage}</Text>
-                </View>
+                                    const status = await callManager.android.getAudioDeviceStatus();
+                                    if (!status.devices || status.devices.length < 2) {
+                                        Alert.alert("Audio Devices", "No other audio devices found.");
+                                        return;
+                                    }
 
-                {/* Overlay: Stats */}
-                <View style={styles.statsBox}>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>Reps</Text>
-                        <Text style={styles.statValue}>{repCount}</Text>
+                                    const buttons = status.devices.slice(0, 3).map((d: string) => ({
+                                        text: d === status.selectedDevice ? `${d} ✓` : d,
+                                        onPress: () => callManager.android.selectAudioDevice(d)
+                                    }));
+
+                                    Alert.alert(
+                                        "Audio Output",
+                                        "Choose where to route the coach's voice",
+                                        buttons,
+                                        { cancelable: true }
+                                    );
+                                } catch (e) {
+                                    console.warn('[GymAgent] Audio device switch error:', e);
+                                    Alert.alert("Error", "Could not load audio devices.");
+                                }
+                            }}
+                        >
+                            <Ionicons name="volume-high" size={16} color="#fff" />
+                            <Text style={styles.audioDeviceText}>Audio Map</Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.gymbroBar}>
+                            <Text style={styles.gymbroText}>
+                                🏋️ GymBro AI Coach • YOLO 30 FPS • Gemini Vision
+                            </Text>
+                        </View>
                     </View>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>Form</Text>
-                        <Text style={styles.statValue}>{formScore.toFixed(0)}%</Text>
-                    </View>
-                </View>
-
-                {/* Overlay: End Button */}
-                <TouchableOpacity
-                    style={styles.endTrainingButton}
-                    onPress={handleEndTraining}
-                    disabled={isLoading}
-                >
-                    {isLoading ? (
-                        <ActivityIndicator color="#fff" />
-                    ) : (
-                        <>
-                            <Ionicons name="stop-circle" size={24} color="#fff" />
-                            <Text style={styles.endTrainingText}>End Training</Text>
-                        </>
-                    )}
-                </TouchableOpacity>
-            </View>
+                </StreamCall>
+            </StreamVideo>
         );
     }
 
-    // ── Render setup UI ──────────────────────────────────────────────────────
+    // ── Selection UI ─────────────────────────────────────────────────────
     return (
-        <View style={styles.container}>
-            {/* Header */}
+        <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
             <View style={styles.header}>
-                <Text style={styles.appName}>GymBro</Text>
-                <Text style={styles.subtitle}>AI Video Trainer</Text>
-            </View>
-
-            {/* Instructions */}
-            <View style={styles.instructionsCard}>
-                <Ionicons name="information-circle" size={32} color={Colors.primary} />
-                <Text style={styles.instructionsTitle}>How it works</Text>
-                <Text style={styles.instructionsText}>
-                    1. Select your exercise{'\n'}
-                    2. Start AI training{'\n'}
-                    3. Get real-time voice coaching{'\n'}
-                    4. Complete your reps with form feedback
-                </Text>
-            </View>
-
-            {/* Exercise selector */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Select Exercise</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.exerciseScroll}>
-                    {EXERCISES.map((ex) => (
-                        <TouchableOpacity
-                            key={ex.key}
-                            style={[styles.exBtn, selectedExercise === ex.key && styles.exBtnActive]}
-                            onPress={() => setSelectedExercise(ex.key)}
-                        >
-                            <Text style={styles.exIcon}>{ex.icon}</Text>
-                            <Text style={[styles.exLabel, selectedExercise === ex.key && styles.exLabelActive]}>
-                                {ex.label}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
-            </View>
-
-            {/* Call controls */}
-            <View style={styles.controls}>
-                {isLoading ? (
-                    <ActivityIndicator size="large" color={Colors.primary} />
-                ) : (
-                    <TouchableOpacity
-                        style={[styles.callBtn, styles.startCallBtn]}
-                        onPress={handleStartTraining}
-                    >
-                        <Ionicons name="mic" size={24} color="#fff" />
-                        <Text style={styles.callBtnText}>Start AI Training</Text>
-                    </TouchableOpacity>
+                <Text style={styles.title}>AI Gym Trainer</Text>
+                <Text style={styles.subtitle}>Vision Agents + Stream Video • Real-time coaching</Text>
+                {agentAvailable !== null && (
+                    <View style={[styles.statusBadge, { backgroundColor: agentAvailable ? '#22c55e15' : '#ef444415' }]}>
+                        <View style={[styles.statusDot, { backgroundColor: agentAvailable ? '#22c55e' : '#ef4444' }]} />
+                        <Text style={[styles.statusText, { color: agentAvailable ? '#22c55e' : '#ef4444' }]}>
+                            {agentAvailable ? 'Vision Agents Ready' : 'Vision Agents Offline'}
+                        </Text>
+                    </View>
                 )}
             </View>
 
-            {/* Technical note */}
-            <View style={styles.techNote}>
-                <Text style={styles.techNoteText}>
-                    ⚡ Powered by Vision Agents SDK + Gemini 3.0 Flash + ElevenLabs TTS
+            <Text style={styles.sectionTitle}>Choose Exercise</Text>
+            <View style={styles.exerciseGrid}>
+                {EXERCISES.map(ex => (
+                    <TouchableOpacity
+                        key={ex.key}
+                        style={[styles.exerciseCard, selectedExercise === ex.key && styles.exerciseCardSelected]}
+                        onPress={() => setSelectedExercise(ex.key)}
+                    >
+                        <Text style={styles.exerciseIcon}>{ex.icon}</Text>
+                        <Text style={[styles.exerciseLabel, selectedExercise === ex.key && { color: Colors.primary }]}>
+                            {ex.label}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+
+            <View style={styles.infoCard}>
+                <Text style={styles.infoTitle}>🎯 How It Works</Text>
+                <Text style={styles.infoText}>
+                    {'• Join a '}
+                    <Text style={styles.bold}>Stream video call</Text>
+                    {' with your AI coach\n• '}
+                    <Text style={styles.bold}>YOLO</Text>
+                    {' analyzes your pose at '}
+                    <Text style={styles.bold}>30 FPS</Text>
+                    {'\n• '}
+                    <Text style={styles.bold}>Gemini</Text>
+                    {' watches form and coaches in real-time\n• Just '}
+                    <Text style={styles.bold}>talk naturally</Text>
+                    {' — voice works through the call'}
                 </Text>
             </View>
-        </View>
+
+            <TouchableOpacity
+                style={[styles.startButton, (!agentAvailable || isLoading) && styles.startButtonDisabled]}
+                onPress={handleStartTraining}
+                disabled={!agentAvailable || isLoading}
+            >
+                {isLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                    <>
+                        <Ionicons name="videocam" size={22} color="#fff" />
+                        <Text style={styles.startButtonText}>Start Training</Text>
+                    </>
+                )}
+            </TouchableOpacity>
+
+            {/* ── Recent Sessions ──────────────────────────────────────── */}
+            <TouchableOpacity style={styles.recentSessionsBtn} onPress={toggleSessions} activeOpacity={0.7}>
+                <View style={styles.recentBtnLeft}>
+                    <Ionicons name="time-outline" size={20} color={Colors.textSecondary} />
+                    <Text style={styles.recentBtnText}>Recent Sessions</Text>
+                    {sessions.length > 0 && (
+                        <View style={styles.sessionCountBadge}>
+                            <Text style={styles.sessionCountText}>{sessions.length}</Text>
+                        </View>
+                    )}
+                </View>
+                <Ionicons
+                    name={showSessions ? 'chevron-up' : 'chevron-down'}
+                    size={18} color={Colors.textMuted}
+                />
+            </TouchableOpacity>
+
+            {showSessions && (
+                <View style={styles.sessionsPanel}>
+                    {sessionsLoading ? (
+                        <View style={styles.sessionsLoading}>
+                            <ActivityIndicator color={Colors.primary} size="small" />
+                            <Text style={styles.loadingText}>Loading sessions...</Text>
+                        </View>
+                    ) : sessions.length === 0 ? (
+                        <View style={styles.emptySessions}>
+                            <Text style={styles.emptyIcon}>🏋️</Text>
+                            <Text style={styles.emptyText}>No sessions yet</Text>
+                            <Text style={styles.emptySubtext}>Complete a training session to see your history here</Text>
+                        </View>
+                    ) : (
+                        <>
+                            <TouchableOpacity onPress={loadSessions} style={styles.refreshBtn}>
+                                <Ionicons name="refresh" size={14} color={Colors.textMuted} />
+                                <Text style={styles.refreshText}>Refresh</Text>
+                            </TouchableOpacity>
+                            {sessions.map((s, i) => (
+                                <SessionCard key={s.session_id || i} session={s} />
+                            ))}
+                        </>
+                    )}
+                </View>
+            )}
+
+            {!agentAvailable && agentAvailable !== null && (
+                <Text style={styles.warningText}>Vision Agents SDK not available on backend.</Text>
+            )}
+        </ScrollView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: Colors.bg,
-        paddingTop: 60,
+    container: { flex: 1, backgroundColor: Colors.bg },
+    contentContainer: { padding: Spacing.lg, paddingBottom: 120 },
+
+    header: { marginBottom: Spacing.xl },
+    title: { fontSize: 28, fontFamily: Fonts.bold, color: Colors.textPrimary, marginBottom: 4 },
+    subtitle: { fontSize: 13, color: Colors.textSecondary },
+    statusBadge: {
+        flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+        paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginTop: 10,
     },
-    trainingContainer: {
-        flex: 1,
-        backgroundColor: Colors.bg,
-        justifyContent: 'space-between',
+    statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+    statusText: { fontSize: 12, fontFamily: Fonts.medium },
+
+    sectionTitle: { fontSize: 18, color: Colors.textPrimary, fontFamily: Fonts.bold, marginBottom: Spacing.md },
+    exerciseGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.xl },
+    exerciseCard: {
+        width: '47%', backgroundColor: Colors.card, borderRadius: Radius.lg,
+        padding: Spacing.md, alignItems: 'center', borderWidth: 2, borderColor: 'transparent',
     },
-    cameraFeed: {
-        ...StyleSheet.absoluteFillObject,
-        flex: 1,
+    exerciseCardSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryGlow },
+    exerciseIcon: { fontSize: 32, marginBottom: 8 },
+    exerciseLabel: { fontSize: 14, color: Colors.textPrimary, fontFamily: Fonts.medium },
+
+    infoCard: { backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.xl },
+    infoTitle: { fontSize: 15, fontFamily: Fonts.bold, color: Colors.textPrimary, marginBottom: 8 },
+    infoText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 22 },
+    bold: { fontFamily: Fonts.bold, color: Colors.textPrimary },
+
+    startButton: {
+        backgroundColor: Colors.primary, borderRadius: Radius.lg, paddingVertical: 16,
+        flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, marginBottom: Spacing.md,
     },
+    startButtonDisabled: { opacity: 0.4 },
+    startButtonText: { color: '#fff', fontSize: 18, fontFamily: Fonts.bold },
+    warningText: { fontSize: 12, color: Colors.error, textAlign: 'center', marginTop: 8 },
+
+    // Recent Sessions button
+    recentSessionsBtn: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        backgroundColor: Colors.card, borderRadius: Radius.lg, paddingHorizontal: 16, paddingVertical: 14,
+        marginBottom: Spacing.sm, borderWidth: 1, borderColor: Colors.border,
+    },
+    recentBtnLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    recentBtnText: { fontSize: 15, color: Colors.textPrimary, fontFamily: Fonts.medium },
+    sessionCountBadge: {
+        backgroundColor: Colors.primary, borderRadius: 10,
+        paddingHorizontal: 7, paddingVertical: 2,
+    },
+    sessionCountText: { fontSize: 11, color: '#fff', fontFamily: Fonts.bold },
+
+    // Sessions Panel
+    sessionsPanel: { marginBottom: Spacing.xl },
+    sessionsLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: Spacing.md, justifyContent: 'center' },
+    loadingText: { color: Colors.textSecondary, fontSize: 13 },
+    emptySessions: { alignItems: 'center', paddingVertical: Spacing.xl },
+    emptyIcon: { fontSize: 40, marginBottom: 8 },
+    emptyText: { fontSize: 16, color: Colors.textPrimary, fontFamily: Fonts.bold, marginBottom: 4 },
+    emptySubtext: { fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
+    refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginBottom: 8 },
+    refreshText: { fontSize: 12, color: Colors.textMuted },
+
+    // Session Card
+    sessionCard: {
+        backgroundColor: Colors.card, borderRadius: Radius.lg,
+        marginBottom: Spacing.sm, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border,
+    },
+    sessionRow: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, gap: 12 },
+    exerciseDot: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+    exerciseDotIcon: { fontSize: 20 },
+    sessionInfo: { flex: 1 },
+    sessionExercise: { fontSize: 15, fontFamily: Fonts.bold, color: Colors.textPrimary },
+    sessionMeta: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+    sessionRight: { flexDirection: 'row', alignItems: 'center' },
+    scoreChip: {
+        fontSize: 13, fontFamily: Fonts.bold,
+        borderWidth: 1, borderRadius: 8,
+        paddingHorizontal: 8, paddingVertical: 3,
+    },
+    sessionDetails: { paddingHorizontal: Spacing.md, paddingBottom: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border },
+    statsRow: { flexDirection: 'row', paddingTop: Spacing.md, marginBottom: Spacing.sm },
+    statBox: { flex: 1, alignItems: 'center' },
+    statValue: { fontSize: 18, fontFamily: Fonts.bold, color: Colors.textPrimary },
+    statLabel: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+    faultsSection: { backgroundColor: Colors.surface, borderRadius: Radius.sm, padding: Spacing.sm, marginTop: 4 },
+    faultsTitle: { fontSize: 12, color: Colors.warning, fontFamily: Fonts.bold, marginBottom: 4 },
+    faultItem: { fontSize: 12, color: Colors.textSecondary, lineHeight: 20 },
+    sessionNote: { fontSize: 12, color: Colors.textMuted, textAlign: 'center', paddingVertical: 8 },
+
+    // Training View
+    trainingContainer: { flex: 1, backgroundColor: '#000' },
     trainingHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: Radius.lg,
-        justifyContent: 'space-between',
-        marginTop: 60,
-        marginHorizontal: Spacing.lg,
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingHorizontal: 16, paddingVertical: 12, paddingTop: 52,
+        backgroundColor: 'rgba(0,0,0,0.8)',
     },
-    liveIndicator: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-        backgroundColor: Colors.error,
+    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#22c55e' },
+    headerLabel: { color: '#fff', fontSize: 16, fontFamily: Fonts.bold },
+    timerText: { color: '#fff', fontSize: 18, fontFamily: Fonts.bold },
+    gymbroBar: { backgroundColor: 'rgba(0,0,0,0.85)', paddingVertical: 8, alignItems: 'center' },
+    gymbroText: { color: '#FF6B35', fontSize: 11, fontFamily: Fonts.medium },
+    audioDeviceBtn: {
+        position: 'absolute', top: 110, right: 16,
+        backgroundColor: 'rgba(0,0,0,0.6)', flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, gap: 6,
+        zIndex: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
     },
-    trainingHeaderText: {
-        color: '#fff',
-        fontSize: Fonts.sizes.md,
-        fontWeight: '700',
-        flex: 1,
-        marginLeft: 12,
-    },
-    timerText: {
-        color: Colors.primary,
-        fontSize: Fonts.sizes.lg,
-        fontWeight: '700',
-    },
-    trainerMessageBox: {
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        padding: Spacing.xl,
-        borderRadius: Radius.lg,
-        alignItems: 'center',
-        marginVertical: Spacing.xl,
-        marginHorizontal: Spacing.lg,
-    },
-    trainerMessage: {
-        color: '#fff',
-        fontSize: Fonts.sizes.md,
-        textAlign: 'center',
-        marginTop: Spacing.md,
-        lineHeight: 24,
-    },
-    statsBox: {
-        flexDirection: 'row',
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        marginHorizontal: Spacing.lg,
-        marginBottom: Spacing.lg,
-        borderRadius: Radius.lg,
-        padding: Spacing.lg,
-        justifyContent: 'space-around',
-    },
-    statItem: {
-        alignItems: 'center',
-    },
-    statLabel: {
-        color: Colors.textSecondary,
-        fontSize: Fonts.sizes.sm,
-        fontWeight: '600',
-    },
-    statValue: {
-        color: Colors.primary,
-        fontSize: Fonts.sizes.xl,
-        fontWeight: '700',
-        marginTop: 4,
-    },
-    endTrainingButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: Colors.error,
-        paddingVertical: 16,
-        paddingHorizontal: 32,
-        borderRadius: Radius.full,
-        gap: 12,
-        marginHorizontal: Spacing.lg,
-        marginBottom: Spacing.xl,
-    },
-    endTrainingText: {
-        color: '#fff',
-        fontSize: Fonts.sizes.lg,
-        fontWeight: '700',
-    },
-    header: {
-        alignItems: 'center',
-        marginBottom: Spacing.xl,
-    },
-    appName: {
-        color: Colors.primary,
-        fontSize: Fonts.sizes.xxl,
-        fontWeight: '900',
-    },
-    subtitle: {
-        color: Colors.textSecondary,
-        fontSize: Fonts.sizes.md,
-        marginTop: 4,
-    },
-    instructionsCard: {
-        backgroundColor: Colors.card,
-        marginHorizontal: Spacing.lg,
-        marginBottom: Spacing.lg,
-        padding: Spacing.xl,
-        borderRadius: Radius.lg,
-        alignItems: 'center',
-    },
-    instructionsTitle: {
-        color: Colors.textPrimary,
-        fontSize: Fonts.sizes.lg,
-        fontWeight: '700',
-        marginTop: Spacing.md,
-        marginBottom: Spacing.sm,
-    },
-    instructionsText: {
-        color: Colors.textSecondary,
-        fontSize: Fonts.sizes.sm,
-        textAlign: 'center',
-        lineHeight: 22,
-    },
-    section: {
-        marginHorizontal: Spacing.lg,
-        marginBottom: Spacing.xl,
-    },
-    sectionTitle: {
-        color: Colors.textPrimary,
-        fontSize: Fonts.sizes.md,
-        fontWeight: '700',
-        marginBottom: Spacing.md,
-    },
-    exerciseScroll: {
-        flexDirection: 'row',
-    },
-    exBtn: {
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-        borderRadius: Radius.lg,
-        borderWidth: 2,
-        borderColor: Colors.border,
-        marginRight: 12,
-        backgroundColor: Colors.card,
-        minWidth: 100,
-    },
-    exBtnActive: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
-    },
-    exIcon: {
-        fontSize: 28,
-        marginBottom: 4,
-    },
-    exLabel: {
-        fontSize: Fonts.sizes.sm,
-        color: Colors.textSecondary,
-        fontWeight: '600',
-    },
-    exLabelActive: {
-        color: '#fff',
-        fontWeight: '700',
-    },
-    controls: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: Spacing.lg,
-    },
-    callBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 18,
-        paddingHorizontal: 32,
-        borderRadius: Radius.full,
-        minWidth: 200,
-        gap: 12,
-    },
-    startCallBtn: {
-        backgroundColor: Colors.primary,
-    },
-    callBtnText: {
-        color: '#fff',
-        fontSize: Fonts.sizes.lg,
-        fontWeight: '700',
-    },
-    techNote: {
-        padding: Spacing.lg,
-        alignItems: 'center',
-    },
-    techNoteText: {
-        color: Colors.textMuted,
-        fontSize: Fonts.sizes.xs,
-        textAlign: 'center',
-    },
+    audioDeviceText: { color: '#fff', fontSize: 12, fontFamily: Fonts.medium },
 });

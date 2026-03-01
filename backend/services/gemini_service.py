@@ -56,7 +56,21 @@ Give ONE coaching cue (max 15 words). Direct, actionable."""
     return response.text.strip().strip('"')
 
 
-
+async def generate_coaching_response(prompt: str) -> str:
+    """
+    Generate a coaching response for voice queries during training.
+    Uses Gemini to produce a brief, contextual reply.
+    """
+    try:
+        response = await _get_client().aio.models.generate_content(
+            model=_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.7, max_output_tokens=100),
+        )
+        return response.text.strip().strip('"')
+    except Exception as e:
+        print(f"[Gemini] Coaching response error: {e}")
+        return ""
 async def generate_workout_split(user_stats: dict) -> dict:
     """
     Generate a personalized workout split using Gemini AI.
@@ -131,7 +145,7 @@ Return the response in the following JSON format (no markdown, just JSON):
                     contents=prompt,
                     config=types.GenerateContentConfig(temperature=0.7),
                 ),
-                timeout=10.0
+                timeout=25.0
             )
             
             # Parse and validate Gemini response
@@ -172,7 +186,7 @@ Return the response in the following JSON format (no markdown, just JSON):
             return workout_split
             
         except asyncio.TimeoutError:
-            last_error = TimeoutError("Workout split generation timed out after 10 seconds")
+            last_error = TimeoutError("Workout split generation timed out after 25 seconds")
             if attempt < max_attempts - 1:
                 continue  # Retry
             raise last_error

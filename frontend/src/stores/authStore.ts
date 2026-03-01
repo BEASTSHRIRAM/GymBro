@@ -49,6 +49,19 @@ interface RegisterData {
     activity_level?: string;
 }
 
+// Safely extract a displayable error string from Axios error responses
+// Handles Pydantic validation errors (array of {type, loc, msg, input, ctx})
+function parseError(e: any, fallback: string): string {
+    const detail = e.response?.data?.detail;
+    if (!detail) return fallback;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+        return detail.map((d: any) => d.msg ?? JSON.stringify(d)).join('; ');
+    }
+    if (typeof detail === 'object') return JSON.stringify(detail);
+    return String(detail);
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     isAuthenticated: false,
@@ -87,7 +100,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             set({ user: data.user, isAuthenticated: true, isLoading: false });
         } catch (e: any) {
             set({
-                error: e.response?.data?.detail ?? 'Login failed',
+                error: parseError(e, 'Login failed'),
                 isLoading: false,
             });
         }
@@ -100,7 +113,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             set({ isLoading: false });
         } catch (e: any) {
             set({
-                error: e.response?.data?.detail ?? 'Registration failed',
+                error: parseError(e, 'Registration failed'),
                 isLoading: false,
             });
         }
@@ -113,7 +126,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             set({ isLoading: false });
         } catch (e: any) {
             set({
-                error: e.response?.data?.detail ?? 'OTP verification failed',
+                error: parseError(e, 'OTP verification failed'),
                 isLoading: false,
             });
         }
@@ -129,15 +142,15 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({ isLoading: true, resendError: null, resendSuccess: null });
         try {
             const { data } = await api.post('/auth/resend-otp', { email });
-            set({ 
+            set({
                 resendSuccess: data.message,
                 resendCooldown: data.cooldown_seconds,
-                isLoading: false 
+                isLoading: false
             });
         } catch (e: any) {
             const errorData = e.response?.data;
             set({
-                resendError: errorData?.detail ?? 'Failed to resend OTP. Please try again',
+                resendError: parseError(e, 'Failed to resend OTP. Please try again'),
                 resendCooldown: errorData?.remaining_seconds ?? 0,
                 isLoading: false,
             });

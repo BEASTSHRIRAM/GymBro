@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from database import connect_db, close_db
-from routers import auth, strength, diet, body_scan, gamification, coaches, form_checker, profile, workout_split, stream_video, video_call, vision_agents, vision_agents_ws
+from routers import auth, strength, diet, body_scan, gamification, coaches, form_checker, profile, workout_split, stream_video, video_call, vision_agents, vision_agents_ws, gym_agent
 
 settings = get_settings()
 
@@ -51,6 +51,7 @@ app.include_router(stream_video.router)
 app.include_router(video_call.router)
 app.include_router(vision_agents.router)
 app.include_router(vision_agents_ws.router)
+app.include_router(gym_agent.router)
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
