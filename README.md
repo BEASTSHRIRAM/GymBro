@@ -1,187 +1,97 @@
-# 🏋️ GymBro — AI-Powered Fitness App
+# 🏋️ GymBro — Your AI Gym Companion
 
-> Real-time AI form correction · Voice coaching · Diet planning · Strength prediction · Gamification
+![GymBro Banner](https://raw.githubusercontent.com/BEASTSHRIRAM/GymBro/main/banner.png)
 
----
+> **The ultimate fitness sidekick that knows your form, your diet, and your goals — powered by real-time Computer Vision and Voice AI.**
 
-## Stack
-
-| Layer | Tech |
-|-------|------|
-| Frontend | React Native + Expo (TypeScript) |
-| Navigation | React Navigation (Drawer + Bottom Tabs) |
-| State | Zustand |
-| Backend | FastAPI (Python 3.11) |
-| Database | MongoDB (Motor async) |
-| AI Vision | VisionAgents SDK |
-| AI Text | Google Gemini 1.5 Flash |
-| TTS | Deepgram |
-| Auth | JWT + OTP email (Gmail) |
-| Realtime | WebSocket (native) |
-| Deploy | Docker Compose |
+GymBro isn't just a tracker; it’s a living context engine that acts as your personal elite-level coach. By merging high-frequency computer vision analysis with persistent memory, GymBro provides guidance that is specifically tailored to YOUR body and YOUR history.
 
 ---
 
-## Folder Structure
+## 🚀 Visionary Features
 
-```
-GymBro/
-├── backend/
-│   ├── main.py           # FastAPI entry point
-│   ├── config.py         # Settings (Pydantic)
-│   ├── database.py       # MongoDB Motor
-│   ├── models/           # Pydantic DB schemas
-│   ├── routers/          # API endpoints
-│   │   ├── auth.py       # Register/OTP/Login/Refresh
-│   │   ├── form_checker.py  # WS /ws/form-check
-│   │   ├── strength.py
-│   │   ├── diet.py
-│   │   ├── body_scan.py
-│   │   ├── gamification.py
-│   │   └── coaches.py
-│   └── services/         # Business logic
-│       ├── auth_service.py
-│       ├── vision_service.py
-│       ├── gemini_service.py
-│       ├── tts_service.py
-│       ├── strength_service.py
-│       ├── diet_service.py
-│       └── gamification_service.py
-└── frontend/
-    ├── App.tsx
-    └── src/
-        ├── navigation/
-        ├── screens/      # 10 screens
-        ├── stores/       # 4 Zustand stores
-        ├── services/     # api, websocket, audio
-        └── theme/
-```
+### 🤖 AI Trainer (Real-Time Vision)
+*   **Precision Pose Estimation**: Analyzes 17 key COCO keypoints at 30 FPS using YOLO11n-Pose to ensure your squat depth is perfect and your back is straight.
+*   **Audio Coaching (Voice AI)**: Integrated with **ElevenLabs**, giving you instant, natural-sounding voice corrections (e.g., *"Keep your chest up, Shriram!"*) while you are mid-set.
+*   **WebRTC/WebSocket Streaming**: Ultra-low latency streaming between your mobile camera and the AI backend for zero-lag feedback.
+
+### 🥗 Personal Nutritionist & Supplement Coach
+*   **Metabolic Calculation**: Uses Mifflin-St Jeor formulas to precisely calculate your BMR and TDEE based on your profile.
+*   **Context-Aware Dieting**: AI-generated meal plans that adapt to your training volume.
+*   **Supplementation Intelligence**: Specific advice on micronutrients and performance boosters based on your goal (Bulking, Cutting, or Maintenance).
+
+### 🧘 AI Body Scan & Posture Engine
+*   **Imbalance Detection**: Identifies anterior pelvic tilt, kyphosis, and other common lifting posture issues.
+*   **Physical Evolution Tracking**: Visualized progress reports that show how your posture and body composition improve over months of training.
+
+### 🎮 Gamified Motivation
+*   **RPG-Style XP System**: Earn experience for consistent logs, perfect form scores, and distance traveled.
+*   **Tiered Leaderboard**: Rise from *Beginner* to *Beast* status and compete on the global "Bros" leaderboard.
 
 ---
 
-## Quick Start
+## 🧠 Brain Activity: Context Persistence
 
-### 1. Clone & Environment
+GymBro is built on a **Central Context Engine** that ensures the AI doesn't forget who you are. This engine aggregates:
+1.  **Bio-Data**: Weight, height, age, and gender.
+2.  **Training History**: Last 50 workout summaries including average form scores and common faults.
+3.  **Voice Insights**: Remembers previous questions you've asked the AI coach.
+4.  **Posture History**: Maintains a baseline of your skeletal alignment to track improvements.
 
-```bash
-# Backend .env (fill in your keys)
-cp backend/.env.example backend/.env
-```
+---
 
-Fill in `backend/.env`:
-- `GMAIL_USER` + `GMAIL_APP_PASSWORD` — for OTP emails
-- `GEMINI_API_KEY` — Google AI Studio
-- `VISIONAGENTS_API_KEY` — VisionAgents dashboard
-- `DEEPGRAM_API_KEY` — Deepgram console
+## 🛠️ State-of-the-Art Stack
 
-### 2. Backend (Python)
+| Category | Technology |
+| :--- | :--- |
+| **Mobile App** | React Native, Expo, TypeScript |
+| **Design Language** | Glassmorphic Dark UI, Ionicons, Linear Gradients |
+| **Backend** | FastAPI (Python 3.11), Uvicorn (High-Concurrency) |
+| **Compute Vision** | VisionAgents SDK, YOLO11, NumPy, OpenCV |
+| **Large Language Models** | Google Gemini 1.5 Flash (Context Framing) |
+| **Real-time Protocol** | WebRTC (Stream), WebSocket (Full-Duplex) |
+| **Persistence** | MongoDB (Motor Async), Atlas Geo-Spatial Indexing |
+
+---
+
+## 🗺️ Roadmap: The Future of GymBro
+
+*   [ ] **Velkey Integration**: We are moving towards **Velkey** for ultra-optimized user context storage. This will allow the AI to retrieve years of training context in milliseconds, providing an even more personalized and predictive coaching experience.
+*   [ ] **Wearable Sync**: Direct integration with Apple Health and Google Fit for heart-rate-aware sessions.
+*   [ ] **Multi-Camera Form Check**: Simultaneous front/side analysis for 3D form verification.
+*   [ ] **Recipe Scanner**: Photo-to-Macro conversion for instant nutrition logging.
+
+---
+
+## 🏁 Installation
+
+### Backend (Python Core)
+*Ensure you have Python 3.11+ installed.*
 
 ```bash
 cd backend
-
-# Using uv (recommended):
-uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# Or using traditional venv:
 python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
-
+# Activate & Install
+source venv/bin/activate # Mac/Linux
 pip install -r requirements.txt
+# Start the engine
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API Docs: http://localhost:8000/docs
-
-### 3. Frontend (Expo)
-
+### Frontend (Expo App)
 ```bash
 cd frontend
 npm install
 npx expo start
 ```
 
-Scan QR code with **Expo Go** app (iOS/Android).
+---
 
-> Set `EXPO_PUBLIC_API_URL=http://YOUR_LOCAL_IP:8000` in `frontend/.env`
-
-### 4. Docker (full stack)
-
-```bash
-# Start MongoDB + Backend
-docker-compose up --build
-
-# Verify
-curl http://localhost:8000/health
-```
+## 🧹 Security & Environment
+All sensitive configurations are managed via `.env` in the `backend/` directory. **Never** hardcode keys. Reference the `.env.example` for the required keys: `GEMINI_API_KEY`, `STREAM_API_KEY`, `ELEVENLABS_API_KEY`, and `DEEPGRAM_API_KEY`.
 
 ---
 
-## API Reference
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/auth/register` | Register + OTP email |
-| POST | `/auth/verify-otp` | Verify OTP |
-| POST | `/auth/login` | Login → JWT |
-| POST | `/auth/refresh` | Refresh token |
-| GET | `/auth/me` | Profile |
-| WS | `/ws/form-check/{id}` | Real-time form AI |
-| POST | `/strength/log` | Log workout set |
-| GET | `/strength/predict/{exercise}` | 1RM + 4/8wk |
-| POST | `/diet/generate` | Generate meal plan |
-| GET | `/diet/current` | Current diet plan |
-| POST | `/body-scan/analyze` | Upload 360° video |
-| GET | `/gamification/profile` | XP/rank/badges |
-| GET | `/gamification/leaderboard` | Top 20 |
-| GET | `/coaches/nearby` | Geo search |
-| POST | `/coaches/book` | Book session |
-
----
-
-## MongoDB Collections
-
-- `users` — Auth + profile + XP/rank/streak
-- `workout_sessions` — Form check history
-- `strength_predictions` — Logs + 1RM predictions
-- `diet_plans` — AI-generated meal plans
-- `body_scans` — Posture reports
-- `coaches` — Coach profiles (2dsphere geo)
-- `bookings` — Session bookings
-- `reviews` — Coach reviews
-
----
-
-## Adding API Keys
-
-All keys go in `backend/.env`:
-```
-GEMINI_API_KEY=AIza...
-VISIONAGENTS_API_KEY=va_...
-DEEPGRAM_API_KEY=dg_...
-GMAIL_USER=your@gmail.com
-GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
-```
-
-Payment: `STRIPE_SECRET_KEY` — add when ready.
-
----
-
-## MongoDB Geo Index (coaches)
-
-Run once after starting MongoDB:
-```js
-db.coaches.createIndex({ "geo_location": "2dsphere" })
-```
-
----
-
-## Notes
-
-- **Voice coaching**: Deepgram TTS → MP3 → played via Expo AV. Toggle in form checker screen.
-- **Form analysis**: VisionAgents API at 3fps via WebSocket. Graceful fallback if API unavailable.
-- **Diet plan**: Generated async via Gemini (Mifflin-St Jeor BMR → TDEE → macros → meals). Poll `/diet/current`.
-- **Gamification**: No Redis — MongoDB leaderboard query (top 20 by XP).
-- **Payment**: Stripe-ready structure in `/coaches/book` — add Stripe SDK when ready.
+## � License & Attribution
+**Project Owner**: BEASTSHRIRAM  
+**Engineered with ❤️ for the pursuit of gains.**
