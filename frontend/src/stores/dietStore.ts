@@ -37,13 +37,16 @@ interface DietState {
     generate: (input: DietInput) => Promise<void>;
     fetchCurrent: () => Promise<void>;
     pollUntilReady: () => Promise<void>;
+    getSupplementAdvice: (requirements: string) => Promise<void>;
     clearError: () => void;
+    supplementAdvice: string | null;
 }
 
 export const useDietStore = create<DietState>((set, get) => ({
     plan: null,
     isLoading: false,
     error: null,
+    supplementAdvice: null,
 
     clearError: () => set({ error: null }),
 
@@ -64,6 +67,17 @@ export const useDietStore = create<DietState>((set, get) => ({
             const { data } = await api.get('/diet/current');
             set({ plan: data });
         } catch { /* not found is ok */ }
+    },
+
+    getSupplementAdvice: async (requirements: string) => {
+        set({ isLoading: true, error: null, supplementAdvice: null });
+        try {
+            const { data } = await api.post('/diet/supplement', { requirements });
+            set({ supplementAdvice: data.advice, isLoading: false });
+        } catch (e: any) {
+            set({ error: e.response?.data?.detail ?? 'Failed to get supplement advice', isLoading: false });
+            throw e;
+        }
     },
 
     pollUntilReady: async () => {

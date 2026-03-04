@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from database import connect_db, close_db
-from routers import auth, strength, diet, body_scan, gamification, coaches, form_checker, profile, workout_split, stream_video, video_call, vision_agents, vision_agents_ws, gym_agent
+from routers import auth, strength, diet, body_scan, gamification, coaches, form_checker, profile, workout_split, stream_video, video_call, vision_agents, vision_agents_ws, gym_agent, subscription
 
 settings = get_settings()
 
@@ -52,6 +52,7 @@ app.include_router(video_call.router)
 app.include_router(vision_agents.router)
 app.include_router(vision_agents_ws.router)
 app.include_router(gym_agent.router)
+app.include_router(subscription.router)
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ async def health():
 @app.get("/", tags=["health"])
 async def root():
     return {
-        "message": "🏋️ GymBro API is running",
+        "message": "GymBro API is running",
         "docs": "/docs",
         "health": "/health",
     }

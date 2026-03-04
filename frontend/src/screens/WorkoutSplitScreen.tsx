@@ -6,6 +6,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import api from '../services/api';
 import { useProfileStore } from '../stores/profileStore';
 import { Colors, Fonts, Spacing, Radius } from '../theme';
 
@@ -32,6 +33,8 @@ export default function WorkoutSplitScreen() {
     const [completedExercises, setCompletedExercises] = useState<Record<string, boolean>>({});
     const [expandedDay, setExpandedDay] = useState<number | null>(null);
     const [editMode, setEditMode] = useState(false);
+    const [status, setStatus] = useState<any>(null);
+    const [requirements, setRequirements] = useState('');
 
     // Load completion state from AsyncStorage
     useEffect(() => {
@@ -46,7 +49,15 @@ export default function WorkoutSplitScreen() {
 
     useEffect(() => {
         if (!profile) fetchProfile();
+        fetchStatus();
     }, []);
+
+    const fetchStatus = async () => {
+        try {
+            const { data } = await api.get('/subscription/status');
+            setStatus(data);
+        } catch { }
+    };
 
     // Persist completion state
     const toggleExercise = useCallback(async (dayIdx: number, exIdx: number) => {
@@ -65,14 +76,20 @@ export default function WorkoutSplitScreen() {
     };
 
     const handleGenerate = async () => {
+        if (isQuotaExhausted) {
+            Alert.alert('Limit Reached', 'You have used your free AI Workout generation. Upgrade to Premium for unlimited generations!');
+            return;
+        }
+
         try {
-            await generateWorkoutSplit();
+            await generateWorkoutSplit(requirements);
             // The store updates the profile; after re-render, save it
             setTimeout(async () => {
                 const updatedProfile = useProfileStore.getState().profile;
                 if (updatedProfile?.workout_split) {
                     await saveWorkoutSplit(updatedProfile.workout_split);
                 }
+                fetchStatus();
             }, 500);
         } catch (e: any) {
             Alert.alert('Error', e.message || 'Failed to generate split');
@@ -146,6 +163,8 @@ export default function WorkoutSplitScreen() {
     const totalExercises = split?.days?.reduce((sum, d) => sum + (d.exercises?.length || 0), 0) || 0;
     const doneCount = Object.values(completedExercises).filter(Boolean).length;
 
+    const isQuotaExhausted = status?.tier === 'free' && status?.usage?.workout_split?.remaining <= 0;
+
     // ── Empty State ──
     if (!split) {
         return (
@@ -158,24 +177,42 @@ export default function WorkoutSplitScreen() {
                     <Text style={styles.emptySubtitle}>
                         Generate a personalized workout plan based on your body stats and goals using AI
                     </Text>
+
+                    <View style={styles.reqInputGroup}>
+                        <Text style={styles.reqLabel}>Special Requirements (Optional)</Text>
+                        <TextInput
+                            style={styles.reqInput}
+                            placeholder="e.g. 3 days a week, no heavy squats"
+                            placeholderTextColor={Colors.textMuted}
+                            value={requirements}
+                            onChangeText={setRequirements}
+                            multiline
+                        />
+                    </View>
+
                     <TouchableOpacity
-                        style={styles.generateBtn}
+                        style={[styles.generateBtn, isQuotaExhausted && styles.generateBtnDisabled]}
                         onPress={handleGenerate}
-                        disabled={isLoading}
+                        disabled={isLoading || isQuotaExhausted}
                         activeOpacity={0.8}
                     >
                         {isLoading ? (
                             <ActivityIndicator color="#fff" />
                         ) : (
                             <>
-                                <Ionicons name="sparkles" size={20} color="#fff" />
-                                <Text style={styles.generateBtnText}>Generate with AI</Text>
+                                <Ionicons name={isQuotaExhausted ? "lock-closed" : "sparkles"} size={20} color="#fff" />
+                                <Text style={styles.generateBtnText}>
+                                    {isQuotaExhausted ? 'Upgrade to Generate' : 'Generate with AI'}
+                                </Text>
                             </>
                         )}
                     </TouchableOpacity>
+                    {isQuotaExhausted && (
+                        <Text style={styles.quotaHint}>You have used your free AI Workout Split.</Text>
+                    )}
                     {!profile?.age && (
                         <Text style={styles.emptyHint}>
-                            💡 Complete your profile first (age, weight, height, goal)
+                            Complete your profile first (age, weight, height, goal)
                         </Text>
                     )}
                 </View>
@@ -276,7 +313,7 @@ export default function WorkoutSplitScreen() {
                                                         {ex.sets} sets × {ex.reps} reps • {ex.rest_seconds}s rest
                                                     </Text>
                                                     {ex.notes ? (
-                                                        <Text style={styles.exerciseNote}>💡 {ex.notes}</Text>
+                                                        <Text style={styles.exerciseNote}> Note: {ex.notes}</Text>
                                                     ) : null}
                                                 </View>
                                             </TouchableOpacity>
@@ -292,7 +329,7 @@ export default function WorkoutSplitScreen() {
                                         </TouchableOpacity>
                                     )}
                                     {day.notes ? (
-                                        <Text style={styles.dayNote}>📝 {day.notes}</Text>
+                                        <Text style={styles.dayNote}>{day.notes}</Text>
                                     ) : null}
                                 </View>
                             )}
@@ -307,26 +344,44 @@ export default function WorkoutSplitScreen() {
                     </View>
                 ) : null}
 
+                {/* Regenerate requirements */}
+                <View style={[styles.reqInputGroup, { marginTop: Spacing.xl, marginHorizontal: 0, paddingHorizontal: 0 }]}>
+                    <Text style={styles.reqLabel}>Adjust Requirements for New Split</Text>
+                    <TextInput
+                        style={[styles.reqInput, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
+                        placeholder="e.g. Focus more on abs, only 4 days"
+                        placeholderTextColor={Colors.textMuted}
+                        value={requirements}
+                        onChangeText={setRequirements}
+                        multiline
+                    />
+                </View>
+
                 {/* Regenerate */}
                 <TouchableOpacity
-                    style={styles.regenBtn}
+                    style={[styles.regenBtn, isQuotaExhausted && styles.regenBtnDisabled]}
                     onPress={handleGenerate}
-                    disabled={isLoading}
+                    disabled={isLoading || isQuotaExhausted}
                     activeOpacity={0.8}
                 >
                     {isLoading ? (
                         <ActivityIndicator color={Colors.primary} />
                     ) : (
                         <>
-                            <Ionicons name="refresh" size={18} color={Colors.primary} />
-                            <Text style={styles.regenBtnText}>Regenerate Split</Text>
+                            <Ionicons name={isQuotaExhausted ? "lock-closed" : "refresh"} size={18} color={isQuotaExhausted ? Colors.textMuted : Colors.primary} />
+                            <Text style={[styles.regenBtnText, isQuotaExhausted && { color: Colors.textMuted }]}>
+                                {isQuotaExhausted ? 'Upgrade to Regenerate' : 'Regenerate Split'}
+                            </Text>
                         </>
                     )}
                 </TouchableOpacity>
+                {isQuotaExhausted && (
+                    <Text style={[styles.quotaHint, { marginBottom: Spacing.md }]}>Free uses exhausted.</Text>
+                )}
 
                 <View style={{ height: 40 }} />
             </ScrollView>
-        </View>
+        </View >
     );
 }
 
@@ -415,4 +470,15 @@ const styles = StyleSheet.create({
     },
     generateBtnText: { color: '#fff', fontSize: Fonts.sizes.lg, fontWeight: '700' },
     emptyHint: { color: Colors.warning, fontSize: Fonts.sizes.xs, marginTop: Spacing.md, textAlign: 'center' },
+    reqInputGroup: { width: '100%', marginBottom: Spacing.lg, paddingHorizontal: Spacing.xl },
+    reqLabel: { color: Colors.textSecondary, fontSize: Fonts.sizes.sm, fontWeight: '600', marginBottom: 8 },
+    reqInput: {
+        backgroundColor: Colors.surface, color: Colors.textPrimary,
+        padding: Spacing.md, borderRadius: Radius.md,
+        minHeight: 80, textAlignVertical: 'top',
+        fontSize: Fonts.sizes.md, borderWidth: 1, borderColor: Colors.border
+    },
+    generateBtnDisabled: { backgroundColor: Colors.border },
+    regenBtnDisabled: { borderColor: Colors.border },
+    quotaHint: { color: Colors.warning, fontSize: Fonts.sizes.xs, fontWeight: '600', marginTop: 12, textAlign: 'center' },
 });

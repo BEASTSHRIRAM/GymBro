@@ -103,7 +103,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     }
   },
 
-  generateWorkoutSplit: async () => {
+  generateWorkoutSplit: async (requirements?: string) => {
     set({ isLoading: true, error: null });
     try {
       const currentProfile = get().profile;
@@ -121,6 +121,10 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         goal: currentProfile.goal,
         activity_level: currentProfile.activity_level,
       };
+
+      if (requirements && requirements.trim().length > 0) {
+        (requestData as any).requirements = requirements;
+      }
 
       console.log('[WorkoutSplit] Generating split with:', requestData);
       const { data } = await api.post<WorkoutSplit>(

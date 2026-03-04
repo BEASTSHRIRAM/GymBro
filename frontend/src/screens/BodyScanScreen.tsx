@@ -58,12 +58,15 @@ export default function BodyScanScreen() {
     return (
         <ScrollView style={st.container} contentContainerStyle={{ paddingBottom: 40 }}>
             <View style={st.header}>
-                <Text style={st.title}>🔍 AI Body Scan</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                    <Ionicons name="scan-outline" size={28} color={Colors.textPrimary} style={{ marginRight: 8 }} />
+                    <Text style={st.title}>AI Body Scan</Text>
+                </View>
             </View>
 
             {/* Instructions */}
             <View style={st.infoCard}>
-                <Text style={st.infoTitle}>📹 How to Record</Text>
+                <Text style={st.infoTitle}>How to Record</Text>
                 {[
                     '1. Stand 2–3 meters from camera',
                     '2. Record a slow 360° rotation',
@@ -83,7 +86,7 @@ export default function BodyScanScreen() {
                     </>
                 ) : (
                     <>
-                        <Text style={st.scanBtnIcon}>🎥</Text>
+                        <Ionicons name="videocam-outline" size={32} color="#fff" />
                         <Text style={st.scanBtnText}>Record 360° Video</Text>
                         <Text style={st.scanBtnSub}>Opens camera</Text>
                     </>
@@ -107,7 +110,7 @@ export default function BodyScanScreen() {
                     {/* Posture Analysis */}
                     {report.posture_analysis && (
                         <View style={st.card}>
-                            <Text style={st.cardTitle}>🧍 Posture Analysis</Text>
+                            <Text style={st.cardTitle}>Posture Analysis</Text>
                             <Text style={st.analysisText}>{report.posture_analysis}</Text>
                         </View>
                     )}
@@ -115,7 +118,7 @@ export default function BodyScanScreen() {
                     {/* Imbalance Scores */}
                     {report.imbalance_scores && Object.keys(report.imbalance_scores).length > 0 && (
                         <View style={st.card}>
-                            <Text style={st.cardTitle}>⚖️ Imbalance Scores</Text>
+                            <Text style={st.cardTitle}>Imbalance Scores</Text>
                             {Object.entries(report.imbalance_scores).map(([key, val]) => (
                                 <View key={key} style={st.imbalRow}>
                                     <Text style={st.imbalKey}>{key.replace(/_/g, ' ')}</Text>
@@ -131,7 +134,7 @@ export default function BodyScanScreen() {
                     {/* Corrective Exercises */}
                     {report.corrective_exercises && report.corrective_exercises.length > 0 && (
                         <View style={st.card}>
-                            <Text style={st.cardTitle}>💪 Corrective Exercises</Text>
+                            <Text style={st.cardTitle}>Corrective Exercises</Text>
                             {report.corrective_exercises.map((ex, i) => (
                                 <View key={i} style={st.exerciseRow}>
                                     <View style={st.numBadge}><Text style={st.numText}>{i + 1}</Text></View>

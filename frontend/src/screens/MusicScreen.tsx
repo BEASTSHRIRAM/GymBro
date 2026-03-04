@@ -135,7 +135,7 @@ export default function MusicScreen() {
                     <Text style={styles.headerTitle}>Your Music</Text>
                 </View>
                 <Text style={styles.headerSubtitle}>
-                    Paste your Spotify or YouTube Music playlist for each workout day. Hit play when you're at the gym! 🎧
+                    Paste your Spotify or YouTube Music playlist for each workout day. Hit play when you're at the gym!
                 </Text>
 
                 {/* Day Cards */}
@@ -234,7 +234,7 @@ export default function MusicScreen() {
 
                 {/* Tips */}
                 <View style={styles.tipsCard}>
-                    <Text style={styles.tipsTitle}>💡 How it works</Text>
+                    <Text style={styles.tipsTitle}>How it works</Text>
                     <Text style={styles.tipsText}>
                         1. Open Spotify or YouTube Music{'\n'}
                         2. Go to your playlist → Share → Copy Link{'\n'}

@@ -226,3 +226,4 @@ class WorkoutSplitGenerateRequest(BaseModel):
     activity_level: str = Field(
         pattern="^(sedentary|light|moderate|active|very_active)$"
     )
+    requirements: Optional[str] = None

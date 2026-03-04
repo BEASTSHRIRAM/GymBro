@@ -59,20 +59,8 @@ export default function OTPScreen({ navigation, route }: any) {
         }
         clearError();
         await verifyOtp(email, code);
-        if (!useAuthStore.getState().error) {
-            // Auto-login after successful verification
-            if (password) {
-                try {
-                    await useAuthStore.getState().login(email, password);
-                    // login sets isAuthenticated=true → RootNavigator switches to AppDrawer
-                    return;
-                } catch { }
-            }
-            // Fallback: manual login
-            Alert.alert('✅ Verified!', 'Your account is ready. Please log in.', [
-                { text: 'Go to Login', onPress: () => navigation.navigate('Login') },
-            ]);
-        }
+        // verifyOtp now stores JWT tokens and sets isAuthenticated=true
+        // RootNavigator auto-switches to AppDrawer — no manual login needed
     };
 
     return (
@@ -82,7 +70,7 @@ export default function OTPScreen({ navigation, route }: any) {
                     <Ionicons name="arrow-back" size={24} color={Colors.primary} />
                 </TouchableOpacity>
 
-                <Text style={styles.icon}>📧</Text>
+                <Ionicons name="mail-unread-outline" size={48} color={Colors.primary} style={{ marginBottom: 16, textAlign: 'center' }} />
                 <Text style={styles.heading}>Verify Your Email</Text>
                 <Text style={styles.sub}>
                     We sent a 6-digit code to{'\n'}
@@ -114,7 +102,7 @@ export default function OTPScreen({ navigation, route }: any) {
                     {otp.map((digit, i) => (
                         <TextInput
                             key={i}
-                            ref={(r) => (refs.current[i] = r)}
+                            ref={(r) => { refs.current[i] = r; }}
                             style={[styles.otpBox, digit ? styles.otpBoxActive : null]}
                             value={digit}
                             onChangeText={(v) => handleChange(v.replace(/[^0-9]/g, '').slice(-1), i)}

@@ -10,6 +10,7 @@ from typing import Optional
 from routers.auth import get_current_user
 from services.stream_video_agent_service import get_gym_agent_service
 from services.gymbro_context_service import get_context_service
+from services.usage_service import check_quota, increment_usage
 
 router = APIRouter(prefix="/gym-agent", tags=["gym-agent"])
 
@@ -36,6 +37,15 @@ async def start_training(
     Returns call credentials so the frontend can join.
     """
     user_id = str(user["_id"])
+
+    # Check usage quota
+    quota = await check_quota(user_id, "ai_trainer")
+    if not quota["allowed"]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"AI Trainer limit reached ({quota['used']}/{quota['limit']} this month). Upgrade to Premium for more sessions."
+        )
+
     service = get_gym_agent_service()
 
     if not service.is_available():
@@ -57,6 +67,9 @@ async def start_training(
 
     if "error" in result:
         raise HTTPException(status_code=500, detail=result["error"])
+
+    # Increment usage on success
+    await increment_usage(user_id, "ai_trainer")
 
     return result
 

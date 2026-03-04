@@ -1,19 +1,27 @@
 """
 GymBro — Diet Router
-POST /diet/generate — Generate AI meal plan (async via Gemini)
-GET  /diet/current  — Get current diet plan
-PUT  /diet/update   — Update a meal
+POST /diet/generate    — Generate AI meal plan (async via Gemini)
+GET  /diet/current     — Get current diet plan
+PUT  /diet/update      — Update a meal
+POST /diet/supplement  — AI supplement recommendations (Premium)
 """
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from pydantic import BaseModel
+from typing import Optional
 from datetime import datetime
 
 from database import get_db
 from models import DietInput
 from routers.auth import get_current_user
 from services.diet_service import compute_diet_targets
-from services.gemini_service import generate_meal_plan
+from services.gemini_service import generate_meal_plan, generate_supplement_advice
+from services.usage_service import check_quota, increment_usage
 
 router = APIRouter(prefix="/diet", tags=["diet"])
+
+
+class SupplementRequest(BaseModel):
+    requirements: str
 
 
 @router.post("/generate")
@@ -22,12 +30,16 @@ async def generate_diet(
     background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
 ):
-    """
-    Calculate BMR/TDEE/macros synchronously, then fire off Gemini meal
-    generation in a background task. Returns targets immediately.
-    """
     db = get_db()
     user_id = str(user["_id"])
+
+    # Check usage quota
+    quota = await check_quota(user_id, "diet_coach")
+    if not quota["allowed"]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Diet Coach limit reached ({quota['used']}/{quota['limit']} this month). Upgrade to Premium for more."
+        )
 
     targets = compute_diet_targets(
         weight_kg=payload.weight,
@@ -38,7 +50,6 @@ async def generate_diet(
         goal=payload.goal,
     )
 
-    # Persist placeholder doc immediately so client can poll
     plan_doc = {
         "user_id": user_id,
         "calories": targets["calories"],
@@ -49,14 +60,16 @@ async def generate_diet(
         "status": "generating",
         "generated_at": datetime.utcnow(),
     }
-    result = await db["diet_plans"].find_one_and_replace(
+    await db["diet_plans"].find_one_and_replace(
         {"user_id": user_id},
         plan_doc,
         upsert=True,
         return_document=True,
     )
 
-    # Background: ask Gemini to generate meals and update doc
+    # Increment usage
+    await increment_usage(user_id, "diet_coach")
+
     background_tasks.add_task(
         _generate_and_save_meals,
         user_id=user_id,
@@ -125,3 +138,26 @@ async def update_meal(
     meals[meal_index] = meal
     await db["diet_plans"].update_one({"user_id": user_id}, {"$set": {"meals": meals}})
     return {"message": "Meal updated"}
+
+
+@router.post("/supplement")
+async def get_supplement_advice(
+    payload: SupplementRequest,
+    user: dict = Depends(get_current_user),
+):
+    """AI-powered supplement recommendations based on user requirements (Premium only)."""
+    user_id = str(user["_id"])
+
+    quota = await check_quota(user_id, "supplement_coach")
+    if not quota["allowed"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Supplement Coach is a Premium feature. Subscribe to get personalized supplement advice."
+        )
+
+    try:
+        advice = await generate_supplement_advice(payload.requirements)
+        await increment_usage(user_id, "supplement_coach")
+        return {"advice": advice}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"AI service error: {str(e)}")

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     ScrollView, Alert, ActivityIndicator, LayoutAnimation, Platform, UIManager,
+    PermissionsAndroid,
 } from 'react-native';
 import {
     StreamVideo,
@@ -17,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../stores/authStore';
 import { useWorkoutStore } from '../stores/workoutStore';
 import { useGamificationStore } from '../stores/gamificationStore';
+import { useProfileStore } from '../stores/profileStore';
 import { Colors, Spacing, Radius, Fonts } from '../theme';
 import api from '../services/api';
 
@@ -25,10 +27,10 @@ if (Platform.OS === 'android') {
 }
 
 const EXERCISES = [
-    { key: 'squat', label: 'Squat', icon: '🏋️' },
-    { key: 'bench_press', label: 'Bench Press', icon: '💪' },
-    { key: 'deadlift', label: 'Deadlift', icon: '⚡' },
-    { key: 'shoulder_press', label: 'Shoulder Press', icon: '🎯' },
+    { key: 'squat', label: 'Squat', icon: 'barbell-outline' },
+    { key: 'bench_press', label: 'Bench Press', icon: 'fitness-outline' },
+    { key: 'deadlift', label: 'Deadlift', icon: 'flash-outline' },
+    { key: 'shoulder_press', label: 'Shoulder Press', icon: 'arrow-up-circle-outline' },
 ];
 
 const EXERCISE_COLORS: Record<string, string> = {
@@ -64,7 +66,7 @@ function formatDate(iso: string) {
 function SessionCard({ session }: { session: SessionSummary }) {
     const [expanded, setExpanded] = useState(false);
     const color = EXERCISE_COLORS[session.exercise] || Colors.primary;
-    const exerciseEmoji = EXERCISES.find(e => e.key === session.exercise)?.icon || '🏋️';
+    const exerciseEmoji = EXERCISES.find(e => e.key === session.exercise)?.icon || 'barbell-outline';
     const score = session.avg_form_score;
     const scoreColor = score >= 80 ? Colors.success : score >= 50 ? Colors.warning : Colors.error;
 
@@ -79,7 +81,7 @@ function SessionCard({ session }: { session: SessionSummary }) {
         >
             <View style={styles.sessionRow}>
                 <View style={[styles.exerciseDot, { backgroundColor: color }]}>
-                    <Text style={styles.exerciseDotIcon}>{exerciseEmoji}</Text>
+                    <Ionicons name={exerciseEmoji as any} size={20} color="#fff" />
                 </View>
                 <View style={styles.sessionInfo}>
                     <Text style={styles.sessionExercise}>
@@ -123,7 +125,7 @@ function SessionCard({ session }: { session: SessionSummary }) {
                     </View>
                     {session.faults && session.faults.length > 0 && (
                         <View style={styles.faultsSection}>
-                            <Text style={styles.faultsTitle}>⚠️ Form notes:</Text>
+                            <Text style={styles.faultsTitle}>Form notes:</Text>
                             {session.faults.map((f, i) => (
                                 <Text key={i} style={styles.faultItem}>• {f}</Text>
                             ))}
@@ -148,9 +150,7 @@ export default function VideoCallFormCheckerScreen() {
     const [sessionDuration, setSessionDuration] = useState(0);
     const [agentAvailable, setAgentAvailable] = useState<boolean | null>(null);
 
-    // Audio Routing State
-    const [targetAudioEndpoint, setTargetAudioEndpoint] = useState<'speaker' | 'earpiece' | undefined>();
-    const [targetAndroidDevice, setTargetAndroidDevice] = useState<string | undefined>();
+    // Audio device status (for in-call switching only)
     const [audioDeviceStatus, setAudioDeviceStatus] = useState<any>();
 
     // Recent sessions
@@ -162,18 +162,38 @@ export default function VideoCallFormCheckerScreen() {
     const [activeCall, setActiveCall] = useState<Call | null>(null);
 
     const { user } = useAuthStore();
+    const { profile, fetchProfile } = useProfileStore();
     const { startSession, endSession } = useWorkoutStore();
     const { awardXP } = useGamificationStore();
+    const [status, setStatus] = useState<any>(null);
 
-    useEffect(() => {
-        const checkAgent = async () => {
+    const fetchStatus = async () => {
+        try {
+            const { data } = await api.get('/subscription/status');
+            setStatus(data);
+        } catch { }
+    };
+
+    const checkAgent = useCallback(async (retries = 3) => {
+        for (let i = 0; i < retries; i++) {
             try {
                 const { data } = await api.get('/gym-agent/status');
                 setAgentAvailable(data.available);
-            } catch { setAgentAvailable(false); }
-        };
-        checkAgent();
+                return;
+            } catch {
+                if (i < retries - 1) {
+                    await new Promise(r => setTimeout(r, 2000)); // wait 2s before retry
+                }
+            }
+        }
+        setAgentAvailable(false);
     }, []);
+
+    useEffect(() => {
+        checkAgent();
+        fetchStatus();
+        if (!profile) fetchProfile();
+    }, [checkAgent, profile]);
 
     useEffect(() => {
         if (Platform.OS === 'android') {
@@ -210,54 +230,46 @@ export default function VideoCallFormCheckerScreen() {
         setShowSessions(s => !s);
     };
 
+    const isQuotaExhausted = status?.tier === 'free' && status?.usage?.ai_trainer?.remaining <= 0;
+
     const handleStartTraining = async () => {
         if (!user) { Alert.alert('Error', 'Please log in first'); return; }
 
-        // Optional pre-call audio routing prompt
-        let startEndpoint: 'speaker' | 'earpiece' | undefined;
-        let selectedAndroidDevice: string | undefined;
+        if (isQuotaExhausted) {
+            Alert.alert(
+                'Demo Finished',
+                'You have used your free AI Trainer session. Upgrade to GymBro Premium for 35 sessions per month!'
+            );
+            return;
+        }
 
+        // Request camera + mic permissions before starting the call.
+        // Without these, the video track won't publish and the AI can't see the user.
         if (Platform.OS === 'android') {
             try {
-                // Fetch real devices available to the system
-                const status = await callManager.android.getAudioDeviceStatus();
-                if (status.devices && status.devices.length > 0) {
-                    await new Promise<void>((resolve) => {
-                        const buttons = status.devices.slice(0, 3).map((d: string) => ({
-                            text: d,
-                            onPress: () => {
-                                startEndpoint = d.toLowerCase().includes('speaker') ? 'speaker' : 'earpiece';
-                                selectedAndroidDevice = d;
-                                setTargetAudioEndpoint(startEndpoint);
-                                setTargetAndroidDevice(d);
-                                resolve();
-                            }
-                        }));
-                        buttons.push({ text: "Default", onPress: () => resolve() });
-                        Alert.alert("Audio Output", "How are you listening to the coach?", buttons, { cancelable: false });
-                    });
+                const grants = await PermissionsAndroid.requestMultiple([
+                    PermissionsAndroid.PERMISSIONS.CAMERA,
+                    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+                ]);
+                const camOk = grants[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED;
+                const micOk = grants[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED;
+                if (!camOk || !micOk) {
+                    Alert.alert('Permissions Required', 'Camera and microphone access are needed for the AI coach to see and hear you.');
+                    return;
                 }
             } catch (e) {
-                console.warn('[GymAgent] Failed to fetch audio devices:', e);
+                console.warn('[GymAgent] Permission request error:', e);
             }
-        } else if (Platform.OS === 'ios') {
-            await new Promise<void>((resolve) => {
-                Alert.alert(
-                    "Audio Output",
-                    "How are you listening to the coach?",
-                    [
-                        { text: 'Speaker', onPress: () => { startEndpoint = 'speaker'; setTargetAudioEndpoint('speaker'); resolve(); } },
-                        { text: 'Earbuds/Headphones', onPress: () => { startEndpoint = 'earpiece'; setTargetAudioEndpoint('earpiece'); resolve(); } },
-                        { text: 'Default System', onPress: () => resolve() }
-                    ],
-                    { cancelable: false }
-                );
-            });
         }
 
         setIsLoading(true);
         try {
-            const { data } = await api.post('/gym-agent/start', { exercise: selectedExercise });
+            // 1. Fire backend session start
+            const backendPromise = api.post('/gym-agent/start', { exercise: selectedExercise });
+
+            // 2. While backend is creating the agent, we can't do much else,
+            //    but we await it cleanly without any prior blocking Alert.
+            const { data } = await backendPromise;
             if (data.error) throw new Error(data.error);
             const { session_id, call_id, call_type, stream_api_key } = data;
 
@@ -278,27 +290,37 @@ export default function VideoCallFormCheckerScreen() {
 
             const call = client.call(call_type || 'default', call_id);
 
+            // Join the call, then immediately enable camera + mic.
+            // The backend agent needs the video track to be published
+            // so YOLO can process frames and Gemini can see the user's
+            // movements for rep counting & form coaching.
             await call.join({ create: true });
 
-            try {
-                // If on Android and a specific hardware device was selected, lock it in immediately
-                if (Platform.OS === 'android' && selectedAndroidDevice) {
-                    callManager.android.selectAudioDevice(selectedAndroidDevice);
-                }
-            } catch (e) {
-                console.warn('[GymAgent] Failed to override native audio route post-join', e);
-            }
+            // Enable camera + mic right after join so tracks are published ASAP
             try {
                 await call.camera.enable();
+            } catch (e) { console.warn('[GymAgent] Camera enable (non-fatal):', e); }
+            try {
                 await call.microphone.enable();
-            } catch (e) { console.warn('[GymAgent] Media enable (non-fatal):', e); }
+            } catch (e) { console.warn('[GymAgent] Mic enable (non-fatal):', e); }
+
+            // Default to speakerphone for gym use (hands-free coaching)
+            try {
+                if (Platform.OS === 'android') {
+                    const status = await callManager.android.getAudioDeviceStatus();
+                    const speaker = status.devices?.find((d: string) => d.toLowerCase().includes('speaker'));
+                    if (speaker) callManager.android.selectAudioDevice(speaker);
+                }
+            } catch (e) {
+                console.warn('[GymAgent] Speaker default (non-fatal):', e);
+            }
 
             setStreamClient(client);
             setActiveCall(call);
             setSessionId(session_id);
             setIsTraining(true);
             setSessionDuration(0);
-            startSession(selectedExercise);
+            startSession(selectedExercise, user.id);
         } catch (error: any) {
             console.error('[GymAgent] Start error:', error);
             Alert.alert('Error', error.message || 'Failed to start training');
@@ -310,13 +332,16 @@ export default function VideoCallFormCheckerScreen() {
     const handleEndTraining = async () => {
         setIsTraining(false);
         setSessionDuration(0);
+        // End Stream Call
         endSession();
+        setSessionId(null);
+        fetchStatus();
+        loadSessions();
 
         const sid = sessionId;
         const call = activeCall;
         const client = streamClient;
 
-        setSessionId(null);
         setActiveCall(null);
         setStreamClient(null);
         setIsLoading(true);
@@ -341,6 +366,9 @@ export default function VideoCallFormCheckerScreen() {
             // Refresh sessions after training ends
             await loadSessions();
             setSessions(s => s); // trigger re-render
+        } catch (error) {
+            console.error('[GymAgent] Failed to end session cleanly:', error);
+            Alert.alert('Error', 'Failed to end session gracefully');
         } finally {
             setIsLoading(false);
         }
@@ -413,7 +441,7 @@ export default function VideoCallFormCheckerScreen() {
 
                         <View style={styles.gymbroBar}>
                             <Text style={styles.gymbroText}>
-                                🏋️ GymBro AI Coach • YOLO 30 FPS • Gemini Vision
+                                GymBro AI Coach • Gemini Realtime • YOLO Pose
                             </Text>
                         </View>
                     </View>
@@ -429,62 +457,86 @@ export default function VideoCallFormCheckerScreen() {
                 <Text style={styles.title}>AI Gym Trainer</Text>
                 <Text style={styles.subtitle}>Vision Agents + Stream Video • Real-time coaching</Text>
                 {agentAvailable !== null && (
-                    <View style={[styles.statusBadge, { backgroundColor: agentAvailable ? '#22c55e15' : '#ef444415' }]}>
+                    <TouchableOpacity
+                        style={[styles.statusBadge, { backgroundColor: agentAvailable ? '#22c55e15' : '#ef444415' }]}
+                        onPress={() => { setAgentAvailable(null); checkAgent(); }}
+                        activeOpacity={0.7}
+                    >
                         <View style={[styles.statusDot, { backgroundColor: agentAvailable ? '#22c55e' : '#ef4444' }]} />
                         <Text style={[styles.statusText, { color: agentAvailable ? '#22c55e' : '#ef4444' }]}>
-                            {agentAvailable ? 'Vision Agents Ready' : 'Vision Agents Offline'}
+                            {agentAvailable ? 'Vision Agents Ready' : 'Vision Agents Offline — tap to retry'}
                         </Text>
-                    </View>
+                    </TouchableOpacity>
                 )}
             </View>
 
-            <Text style={styles.sectionTitle}>Choose Exercise</Text>
-            <View style={styles.exerciseGrid}>
-                {EXERCISES.map(ex => (
-                    <TouchableOpacity
-                        key={ex.key}
-                        style={[styles.exerciseCard, selectedExercise === ex.key && styles.exerciseCardSelected]}
-                        onPress={() => setSelectedExercise(ex.key)}
-                    >
-                        <Text style={styles.exerciseIcon}>{ex.icon}</Text>
-                        <Text style={[styles.exerciseLabel, selectedExercise === ex.key && { color: Colors.primary }]}>
-                            {ex.label}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
+            <Text style={styles.sectionTitle}>
+                {profile?.workout_split?.days.find(d => d.day_name.toLowerCase().includes(new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()))
+                    ? `Today's Split: ${profile.workout_split.days.find(d => d.day_name.toLowerCase().includes(new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()))?.day_name}`
+                    : 'Choose Exercise'}
+            </Text>
+            <View style={styles.menuContainer}>
+                {profile?.workout_split?.days.find(d => d.day_name.toLowerCase().includes(new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase())) && profile!.workout_split!.days.find(d => d.day_name.toLowerCase().includes(new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()))!.exercises.length > 0 ? (
+                    profile!.workout_split!.days.find(d => d.day_name.toLowerCase().includes(new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()))!.exercises.map((ex, idx) => (
+                        <TouchableOpacity
+                            key={idx}
+                            style={[styles.menuItem, selectedExercise === ex.name && styles.menuItemSelected]}
+                            onPress={() => setSelectedExercise(ex.name)}
+                        >
+                            <Text style={[styles.menuItemText, selectedExercise === ex.name && styles.menuItemTextSelected]}>
+                                {ex.name} ({ex.sets}x{ex.reps})
+                            </Text>
+                        </TouchableOpacity>
+                    ))
+                ) : (
+                    EXERCISES.map(ex => (
+                        <TouchableOpacity
+                            key={ex.key}
+                            style={[styles.menuItem, selectedExercise === ex.key && styles.menuItemSelected]}
+                            onPress={() => setSelectedExercise(ex.key)}
+                        >
+                            <Text style={[styles.menuItemText, selectedExercise === ex.key && styles.menuItemTextSelected]}>
+                                {ex.label}
+                            </Text>
+                        </TouchableOpacity>
+                    ))
+                )}
             </View>
 
             <View style={styles.infoCard}>
-                <Text style={styles.infoTitle}>🎯 How It Works</Text>
+                <Text style={styles.infoTitle}>How It Works</Text>
                 <Text style={styles.infoText}>
                     {'• Join a '}
                     <Text style={styles.bold}>Stream video call</Text>
                     {' with your AI coach\n• '}
                     <Text style={styles.bold}>YOLO</Text>
-                    {' analyzes your pose at '}
-                    <Text style={styles.bold}>30 FPS</Text>
-                    {'\n• '}
-                    <Text style={styles.bold}>Gemini</Text>
-                    {' watches form and coaches in real-time\n• Just '}
+                    {' analyzes your pose in real-time\n• '}
+                    <Text style={styles.bold}>Gemini Realtime</Text>
+                    {' sees, listens & coaches — zero lag\n• Just '}
                     <Text style={styles.bold}>talk naturally</Text>
-                    {' — voice works through the call'}
+                    {' — no separate STT/TTS needed'}
                 </Text>
             </View>
 
             <TouchableOpacity
-                style={[styles.startButton, (!agentAvailable || isLoading) && styles.startButtonDisabled]}
+                style={[styles.startButton, (!agentAvailable || isLoading || isQuotaExhausted) && styles.startButtonDisabled]}
                 onPress={handleStartTraining}
-                disabled={!agentAvailable || isLoading}
+                disabled={!agentAvailable || isLoading || isQuotaExhausted}
             >
                 {isLoading ? (
                     <ActivityIndicator color="#fff" size="small" />
                 ) : (
                     <>
-                        <Ionicons name="videocam" size={22} color="#fff" />
-                        <Text style={styles.startButtonText}>Start Training</Text>
+                        <Ionicons name={isQuotaExhausted ? "lock-closed" : "videocam"} size={22} color="#fff" />
+                        <Text style={styles.startButtonText}>
+                            {isQuotaExhausted ? 'Subscribe to Continue' : 'Start Training'}
+                        </Text>
                     </>
                 )}
             </TouchableOpacity>
+            {isQuotaExhausted && (
+                <Text style={styles.quotaHint}>You have used your free AI Trainer demo session.</Text>
+            )}
 
             {/* ── Recent Sessions ──────────────────────────────────────── */}
             <TouchableOpacity style={styles.recentSessionsBtn} onPress={toggleSessions} activeOpacity={0.7}>
@@ -512,7 +564,7 @@ export default function VideoCallFormCheckerScreen() {
                         </View>
                     ) : sessions.length === 0 ? (
                         <View style={styles.emptySessions}>
-                            <Text style={styles.emptyIcon}>🏋️</Text>
+                            <Ionicons name="barbell-outline" size={40} color={Colors.textMuted} style={{ marginBottom: 8 }} />
                             <Text style={styles.emptyText}>No sessions yet</Text>
                             <Text style={styles.emptySubtext}>Complete a training session to see your history here</Text>
                         </View>
@@ -531,7 +583,7 @@ export default function VideoCallFormCheckerScreen() {
             )}
 
             {!agentAvailable && agentAvailable !== null && (
-                <Text style={styles.warningText}>Vision Agents SDK not available on backend.</Text>
+                <Text style={styles.warningText}>Vision Agents SDK not available on backend. Tap status badge above to retry.</Text>
             )}
         </ScrollView>
     );
@@ -552,14 +604,16 @@ const styles = StyleSheet.create({
     statusText: { fontSize: 12, fontFamily: Fonts.medium },
 
     sectionTitle: { fontSize: 18, color: Colors.textPrimary, fontFamily: Fonts.bold, marginBottom: Spacing.md },
-    exerciseGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.xl },
-    exerciseCard: {
-        width: '47%', backgroundColor: Colors.card, borderRadius: Radius.lg,
-        padding: Spacing.md, alignItems: 'center', borderWidth: 2, borderColor: 'transparent',
+
+    menuContainer: { gap: Spacing.sm, marginBottom: Spacing.xl },
+    menuItem: {
+        backgroundColor: Colors.card, borderRadius: Radius.md,
+        paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg,
+        borderWidth: 1, borderColor: Colors.border,
     },
-    exerciseCardSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryGlow },
-    exerciseIcon: { fontSize: 32, marginBottom: 8 },
-    exerciseLabel: { fontSize: 14, color: Colors.textPrimary, fontFamily: Fonts.medium },
+    menuItemSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryGlow },
+    menuItemText: { fontSize: 16, color: Colors.textPrimary, fontFamily: Fonts.medium },
+    menuItemTextSelected: { color: Colors.primary, fontFamily: Fonts.bold },
 
     infoCard: { backgroundColor: Colors.card, borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.xl },
     infoTitle: { fontSize: 15, fontFamily: Fonts.bold, color: Colors.textPrimary, marginBottom: 8 },
@@ -598,6 +652,7 @@ const styles = StyleSheet.create({
     emptySubtext: { fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
     refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginBottom: 8 },
     refreshText: { fontSize: 12, color: Colors.textMuted },
+    quotaHint: { color: Colors.warning, fontSize: Fonts.sizes.xs, textAlign: 'center', marginTop: -8, marginBottom: Spacing.xl, fontWeight: '600' },
 
     // Session Card
     sessionCard: {

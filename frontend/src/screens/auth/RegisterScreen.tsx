@@ -1,5 +1,5 @@
 // GymBro — Register Screen (with inline OTP step)
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     View, Text, TextInput, TouchableOpacity, StyleSheet,
     KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert,
@@ -58,31 +58,8 @@ export default function RegisterScreen({ navigation }: any) {
         age: '', height: '', weight: '',
         goal: 'build_muscle', activity_level: 'moderate',
     });
-    const [otp, setOtp] = useState(['', '', '', '', '', '']);
     const [showPass, setShowPass] = useState(false);
-    const [showOtp, setShowOtp] = useState(false);
-    const [otpEmail, setOtpEmail] = useState('');
-    const otpRefs = useRef<any[]>([]);
-    const { register, verifyOtp, error, isLoading, clearError, pendingOtpEmail, setPendingOtpEmail, resendOtp, resendCooldown, resendSuccess, resendError, clearResendMessages } = useAuthStore();
-    const countdown = useCountdown(resendCooldown);
-
-    // Sync with Zustand on mount (for when navigating back to Register)
-    useEffect(() => {
-        if (pendingOtpEmail && !showOtp) {
-            setShowOtp(true);
-            setOtpEmail(pendingOtpEmail);
-        }
-    }, [pendingOtpEmail]);
-
-    // Auto-dismiss resend messages after 3 seconds
-    useEffect(() => {
-        if (resendSuccess || resendError) {
-            const timer = setTimeout(() => {
-                clearResendMessages();
-            }, 3000);
-            return () => clearTimeout(timer);
-        }
-    }, [resendSuccess, resendError, clearResendMessages]);
+    const { register, error, isLoading, clearError } = useAuthStore();
 
     const update = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -92,127 +69,31 @@ export default function RegisterScreen({ navigation }: any) {
             Alert.alert('GymBro', 'Name, email and password are required');
             return;
         }
-        clearError();
-        await register({
-            name: form.name, email: form.email, password: form.password,
-            age: form.age ? parseInt(form.age) : undefined,
-            height: form.height ? parseFloat(form.height) : undefined,
-            weight: form.weight ? parseFloat(form.weight) : undefined,
-            goal: form.goal, activity_level: form.activity_level,
-        });
-        const err = useAuthStore.getState().error;
-        if (!err || err.toLowerCase().includes('already registered') || err.toLowerCase().includes('already exists')) {
-            // Registration succeeded or account already exists — navigate to OTP
-            useAuthStore.getState().clearError();
-            navigation.navigate('OTP', { email: form.email, password: form.password });
-        }
-    };
-
-    // ── Step 2: Verify OTP ─────────────────────────────────────────────────────
-    const handleOtpChange = (val: string, idx: number) => {
-        const next = [...otp];
-        next[idx] = val;
-        setOtp(next);
-        if (val && idx < 5) otpRefs.current[idx + 1]?.focus();
-    };
-
-    const handleVerify = async () => {
-        const code = otp.join('');
-        if (code.length !== 6) {
-            Alert.alert('GymBro', 'Please enter the full 6-digit OTP');
-            return;
-        }
-        // Capture credentials before any state resets
-        const email = otpEmail || form.email;
-        const password = form.password;
-        clearError();
-        await verifyOtp(email, code);
-        if (!useAuthStore.getState().error) {
-            // Auto-login after successful verification
-            try {
-                await useAuthStore.getState().login(email, password);
-                setPendingOtpEmail(null);
-                setShowOtp(false);
-                // login sets isAuthenticated=true → RootNavigator switches to AppDrawer
-            } catch {
-                setPendingOtpEmail(null);
-                setShowOtp(false);
-                // Fallback: manual login
-                Alert.alert('✅ Verified!', 'Your account is ready. Please log in.', [
-                    { text: 'Go to Login', onPress: () => navigation.navigate('Login') },
-                ]);
+        try {
+            console.log('[Register] Starting registration...');
+            clearError();
+            await register({
+                name: form.name, email: form.email, password: form.password,
+                age: form.age ? parseInt(form.age) : undefined,
+                height: form.height ? parseFloat(form.height) : undefined,
+                weight: form.weight ? parseFloat(form.weight) : undefined,
+                goal: form.goal, activity_level: form.activity_level,
+            });
+            const err = useAuthStore.getState().error;
+            console.log('[Register] After register(), error:', err);
+            if (!err || err.toLowerCase().includes('already registered') || err.toLowerCase().includes('already exists')) {
+                useAuthStore.getState().clearError();
+                console.log('[Register] Navigating to OTP screen with email:', form.email);
+                navigation.navigate('OTP', { email: form.email, password: form.password });
+                console.log('[Register] navigation.navigate called successfully');
+            } else {
+                console.log('[Register] Error detected, NOT navigating:', err);
             }
+        } catch (e) {
+            console.error('[Register] Unhandled error in handleRegister:', e);
         }
     };
 
-    // ── OTP Step UI ────────────────────────────────────────────────────────────
-    if (showOtp) {
-        return (
-            <LinearGradient colors={['#0A0A0A', '#111111']} style={styles.container}>
-                <View style={styles.otpInner}>
-                    <TouchableOpacity onPress={() => { setShowOtp(false); setPendingOtpEmail(null); }} style={styles.back}>
-                        <Ionicons name="arrow-back" size={24} color={Colors.primary} />
-                    </TouchableOpacity>
-                    <Text style={styles.otpIcon}>📧</Text>
-                    <Text style={styles.heading}>Verify Your Email</Text>
-                    <Text style={styles.sub}>
-                        We sent a 6-digit code to{'\n'}
-                        <Text style={{ color: Colors.primary }}>{otpEmail}</Text>
-                    </Text>
-                    {error && (
-                        <View style={styles.errorBanner}>
-                            <Ionicons name="alert-circle" size={16} color={Colors.error} />
-                            <Text style={styles.errorText}>{error}</Text>
-                        </View>
-                    )}
-                    {resendSuccess && (
-                        <View style={styles.successBanner}>
-                            <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
-                            <Text style={styles.successText}>{resendSuccess}</Text>
-                        </View>
-                    )}
-                    {resendError && (
-                        <View style={styles.errorBanner}>
-                            <Ionicons name="alert-circle" size={16} color={Colors.error} />
-                            <Text style={styles.errorText}>{resendError}</Text>
-                        </View>
-                    )}
-                    <View style={styles.otpRow}>
-                        {otp.map((digit, i) => (
-                            <TextInput
-                                key={i}
-                                ref={(r) => (otpRefs.current[i] = r)}
-                                style={[styles.otpBox, digit ? styles.otpBoxActive : null]}
-                                value={digit}
-                                onChangeText={(v) => handleOtpChange(v.replace(/[^0-9]/g, '').slice(-1), i)}
-                                keyboardType="number-pad"
-                                maxLength={1}
-                                textAlign="center"
-                                onKeyPress={({ nativeEvent }) => {
-                                    if (nativeEvent.key === 'Backspace' && !digit && i > 0)
-                                        otpRefs.current[i - 1]?.focus();
-                                }}
-                            />
-                        ))}
-                    </View>
-                    <TouchableOpacity
-                        style={[styles.btn, isLoading && { opacity: 0.7 }]}
-                        onPress={handleVerify} disabled={isLoading}>
-                        {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>VERIFY OTP</Text>}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.resendBtn, (isLoading || countdown > 0) && styles.resendBtnDisabled]}
-                        onPress={() => resendOtp(otpEmail ?? '')}
-                        disabled={isLoading || countdown > 0}
-                    >
-                        <Text style={[styles.resendBtnText, (isLoading || countdown > 0) && styles.resendBtnTextDisabled]}>
-                            {countdown > 0 ? `Resend OTP (${countdown}s)` : 'Resend OTP'}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-            </LinearGradient>
-        );
-    }
 
     // ── Register Step UI ───────────────────────────────────────────────────────
     return (
@@ -220,7 +101,7 @@ export default function RegisterScreen({ navigation }: any) {
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
                 <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                     <View style={styles.logoRow}>
-                        <Text style={styles.logoIcon}>🏋️</Text>
+                        <Ionicons name="barbell-outline" size={40} color={Colors.primary} style={{ marginBottom: 16 }} />
                         <Text style={styles.logoText}>GymBro</Text>
                     </View>
                     <View style={styles.card}>

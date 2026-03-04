@@ -1,88 +1,151 @@
 """
-GymBro — Strength Router
-POST /strength/log          — Log a workout set
-GET  /strength/predict/{exercise} — Get 1RM + 4/8-week projections
-GET  /strength/history/{exercise} — Get workout log history
+GymBro — Strength Router (Logging & Goals)
+GET  /strength/data/{exercise_name}  — Get active goal and history logs
+POST /strength/log                   — Log a workout set
+POST /strength/goal                  — Set a new active goal
+POST /strength/goal/complete         — Mark the active goal as completed
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from typing import Optional
 from datetime import datetime
-from bson import ObjectId
+import uuid
 
 from database import get_db
 from routers.auth import get_current_user
-from services.strength_service import estimate_1rm, predict_progression
 
 router = APIRouter(prefix="/strength", tags=["strength"])
 
-
 class WorkoutLogRequest(BaseModel):
+    activity_type: str  # 'strength' or 'cardio'
     exercise_name: str
-    weight_kg: float
-    reps: int
-    notes: str = ""
+    weight_kg: Optional[float] = None
+    reps: Optional[int] = None
+    duration_minutes: Optional[int] = None
+    distance_km: Optional[float] = None
 
+class GoalRequest(BaseModel):
+    activity_type: str
+    exercise_name: str
+    target_weight_kg: Optional[float] = None
+    target_duration_minutes: Optional[int] = None
+    target_distance_km: Optional[float] = None
+
+class GoalCompleteRequest(BaseModel):
+    activity_type: str
+    exercise_name: str
+
+
+@router.get("/data/{activity_type}/{exercise_name}")
+async def get_strength_data(activity_type: str, exercise_name: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    user_id = str(user["_id"])
+    
+    doc = await db["strength_logs"].find_one({
+        "user_id": user_id, 
+        "activity_type": activity_type,
+        "exercise_name": exercise_name
+    })
+    if not doc:
+        return {"active_goal": None, "logs": [], "completed_goals": []}
+        
+    return {
+        "active_goal": doc.get("active_goal"),
+        "logs": sorted(doc.get("logs", []), key=lambda x: x["logged_at"], reverse=True),
+        "completed_goals": sorted(doc.get("completed_goals", []), key=lambda x: x["completed_at"], reverse=True)
+    }
 
 @router.post("/log")
 async def log_workout(payload: WorkoutLogRequest, user: dict = Depends(get_current_user)):
     db = get_db()
     user_id = str(user["_id"])
-    one_rm = estimate_1rm(payload.weight_kg, payload.reps)
-
+    
     log_entry = {
-        "weight_kg": payload.weight_kg,
-        "reps": payload.reps,
-        "estimated_1rm": one_rm,
-        "notes": payload.notes,
-        "logged_at": datetime.utcnow(),
+        "id": str(uuid.uuid4()),
+        "logged_at": datetime.utcnow()
     }
-
-    # Upsert the strength prediction doc for this user + exercise
-    await db["strength_predictions"].update_one(
-        {"user_id": user_id, "exercise_name": payload.exercise_name},
+    
+    if payload.activity_type == 'strength':
+        log_entry["weight_kg"] = payload.weight_kg
+        log_entry["reps"] = payload.reps
+    else:
+        log_entry["duration_minutes"] = payload.duration_minutes
+        log_entry["distance_km"] = payload.distance_km
+    
+    await db["strength_logs"].update_one(
+        {
+            "user_id": user_id, 
+            "activity_type": payload.activity_type, 
+            "exercise_name": payload.exercise_name
+        },
         {
             "$push": {"logs": log_entry},
-            "$set": {"updated_at": datetime.utcnow()},
+            "$set": {"updated_at": datetime.utcnow()}
         },
-        upsert=True,
+        upsert=True
     )
+    return {"message": "Workout logged successfully", "log": log_entry}
 
-    return {"estimated_1rm": one_rm, "message": "Workout logged successfully"}
-
-
-@router.get("/predict/{exercise_name}")
-async def predict(exercise_name: str, user: dict = Depends(get_current_user)):
+@router.post("/goal")
+async def set_goal(payload: GoalRequest, user: dict = Depends(get_current_user)):
     db = get_db()
     user_id = str(user["_id"])
-
-    doc = await db["strength_predictions"].find_one(
-        {"user_id": user_id, "exercise_name": exercise_name}
+    
+    active_goal = {
+        "created_at": datetime.utcnow()
+    }
+    
+    if payload.activity_type == 'strength':
+        active_goal["target_weight_kg"] = payload.target_weight_kg
+    else:
+        if payload.target_duration_minutes is not None:
+            active_goal["target_duration_minutes"] = payload.target_duration_minutes
+        if payload.target_distance_km is not None:
+            active_goal["target_distance_km"] = payload.target_distance_km
+    
+    await db["strength_logs"].update_one(
+        {
+            "user_id": user_id, 
+            "activity_type": payload.activity_type, 
+            "exercise_name": payload.exercise_name
+        },
+        {
+            "$set": {
+                "active_goal": active_goal,
+                "updated_at": datetime.utcnow()
+            }
+        },
+        upsert=True
     )
-    if not doc or not doc.get("logs"):
-        raise HTTPException(status_code=404, detail="No workout logs found for this exercise")
+    return {"message": "Goal set successfully", "active_goal": active_goal}
 
-    result = predict_progression(doc["logs"])
-
-    # Cache prediction back to DB
-    await db["strength_predictions"].update_one(
-        {"user_id": user_id, "exercise_name": exercise_name},
-        {"$set": {
-            "current_1rm": result["current_1rm"],
-            "predicted_4_week": result["predicted_4_week"],
-            "predicted_8_week": result["predicted_8_week"],
-            "updated_at": datetime.utcnow(),
-        }},
-    )
-    return result
-
-
-@router.get("/history/{exercise_name}")
-async def get_history(exercise_name: str, user: dict = Depends(get_current_user)):
+@router.post("/goal/complete")
+async def complete_goal(payload: GoalCompleteRequest, user: dict = Depends(get_current_user)):
     db = get_db()
     user_id = str(user["_id"])
-    doc = await db["strength_predictions"].find_one(
-        {"user_id": user_id, "exercise_name": exercise_name}
+    
+    doc = await db["strength_logs"].find_one({
+        "user_id": user_id, 
+        "activity_type": payload.activity_type, 
+        "exercise_name": payload.exercise_name
+    })
+    
+    if not doc or not doc.get("active_goal"):
+        return {"message": "No active goal found"}
+        
+    completed_goal = doc["active_goal"]
+    completed_goal["completed_at"] = datetime.utcnow()
+    
+    await db["strength_logs"].update_one(
+        {
+            "user_id": user_id, 
+            "activity_type": payload.activity_type, 
+            "exercise_name": payload.exercise_name
+        },
+        {
+            "$unset": {"active_goal": ""},
+            "$push": {"completed_goals": completed_goal},
+            "$set": {"updated_at": datetime.utcnow()}
+        }
     )
-    if not doc:
-        return {"logs": []}
-    return {"logs": doc.get("logs", []), "exercise_name": exercise_name}
+    return {"message": "Goal marked as complete!"}

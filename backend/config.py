@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     mongo_db: str = "gymbro"
 
     # JWT
-    jwt_secret: str = "change_this_jwt_secret_in_production"
+    jwt_secret: str = "beast7878"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
@@ -38,7 +38,9 @@ class Settings(BaseSettings):
     # ElevenLabs
     elevenlabs_api_key: str = ""
 
-    # Stream Video
+    # Stream Video (api_key / api_secret used by SDK, stream_api_key / stream_api_secret used by our code)
+    api_key: str = ""
+    api_secret: str = ""
     stream_api_key: str = ""
     stream_api_secret: str = ""
 
@@ -55,7 +57,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
-        extra = "ignore"  # Ignore extra env vars like api_key, api_secret from Stream SDK
 
 
 @lru_cache()

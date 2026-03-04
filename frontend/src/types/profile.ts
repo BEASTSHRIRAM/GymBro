@@ -82,12 +82,12 @@ export interface ProfileState {
   profile: UserProfile | null;
   isLoading: boolean;
   error: string | null;
-  
+
   // Actions
   fetchProfile: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   uploadProfilePicture: (imageUri: string) => Promise<void>;
-  generateWorkoutSplit: () => Promise<void>;
+  generateWorkoutSplit: (requirements?: string) => Promise<void>;
   saveWorkoutSplit: (split: WorkoutSplit) => Promise<void>;
   clearError: () => void;
 }

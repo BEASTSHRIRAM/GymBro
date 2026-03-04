@@ -1,5 +1,5 @@
 // GymBro — Home Screen
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     StatusBar, Dimensions,
@@ -9,24 +9,34 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../stores/authStore';
 import { useGamificationStore } from '../stores/gamificationStore';
 import { Colors, Spacing, Radius, Fonts, getRankColor } from '../theme';
+import api from '../services/api';
 
 const { width } = Dimensions.get('window');
 
 const FEATURES = [
-    { icon: '🎥', label: 'AI\nTrainer', screen: 'AI Trainer', color: '#FF6B35', desc: 'Real-time pose' },
-    { icon: '🥗', label: 'AI Diet\nCoach', screen: 'Diet', color: '#22C55E', desc: 'Custom meal plan' },
-    { icon: '🔍', label: 'Body\nScan', screen: 'BodyScan', color: '#3B82F6', desc: 'Posture analysis' },
-    { icon: '📈', label: 'Strength\nPredictor', screen: 'Strength', color: '#F59E0B', desc: '1RM projection' },
-    { icon: '📍', label: 'Find\nCoaches', screen: 'Coaches', color: '#8B5CF6', desc: 'Nearby trainers' },
-    { icon: '🏆', label: 'Achievements', screen: 'Gamification', color: '#EC4899', desc: 'XP & badges' },
+    { icon: 'videocam-outline', label: 'AI\nTrainer', screen: 'AI Trainer', color: '#FF6B35', desc: 'Real-time pose' },
+    { icon: 'restaurant-outline', label: 'AI Nutrition\nCoach', screen: 'Diet', color: '#22C55E', desc: 'Custom meal plan' },
+    { icon: 'body-outline', label: 'Body\nScan', screen: 'BodyScan', color: '#3B82F6', desc: 'Posture analysis' },
+    { icon: 'calendar-outline', label: 'Activity\nLogging', screen: 'Strength', color: '#F59E0B', desc: 'Track workouts' },
+    { icon: 'people-outline', label: 'Find\nCoaches', screen: 'Coaches', color: '#8B5CF6', desc: 'Nearby trainers' },
+    { icon: 'trophy-outline', label: 'Achievements', screen: 'Gamification', color: '#EC4899', desc: 'XP & badges' },
 ];
 
 export default function HomeScreen({ navigation }: any) {
     const { user } = useAuthStore();
     const { xp, rank, streak_count, fetchProfile } = useGamificationStore();
+    const [status, setStatus] = useState<any>(null);
+
+    const fetchStatus = async () => {
+        try {
+            const { data } = await api.get('/subscription/status');
+            setStatus(data);
+        } catch { }
+    };
 
     useEffect(() => {
         fetchProfile();
+        fetchStatus();
     }, []);
 
     const nextRankXp = { Beginner: 500, Bronze: 1500, Silver: 3000, Gold: 6000, Elite: Infinity }[rank] ?? 500;
@@ -45,8 +55,9 @@ export default function HomeScreen({ navigation }: any) {
                     <Text style={styles.logoText}>GymBro</Text>
                 </View>
                 <TouchableOpacity onPress={() => navigation.navigate('Gamification')}>
-                    <View style={styles.xpBadge}>
-                        <Text style={styles.xpText}>⚡ {xp}</Text>
+                    <View style={styles.headerRight}>
+                        <Ionicons name="flash" size={16} color="#F59E0B" />
+                        <Text style={styles.xpText}>{xp}</Text>
                     </View>
                 </TouchableOpacity>
             </LinearGradient>
@@ -59,23 +70,27 @@ export default function HomeScreen({ navigation }: any) {
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                 >
-                    <Text style={styles.heroGreeting}>
-                        Welcome back, {user?.name?.split(' ')[0] ?? 'Athlete'}! 💪
+                    <Text style={styles.greetingText}>
+                        Welcome back, {user?.name?.split(' ')[0] ?? 'Athlete'}!
                     </Text>
-                    <Text style={styles.heroTitle}>Get Your AI{'\n'}Trainer Now</Text>
+                    <Text style={styles.heroTitle}>
+                        {status?.tier === 'premium' ? "Don't miss today's session" : "Get Your AI\nTrainer Now"}
+                    </Text>
                     <Text style={styles.heroSub}>Real-time form • Diet • Body scan • Voice coaching</Text>
                     <TouchableOpacity
                         style={styles.heroCta}
                         onPress={() => navigation.navigate('AI Trainer')}
                     >
-                        <Text style={styles.heroCtaText}>🚀 Start AI Session</Text>
+                        <Text style={styles.heroCtaText}>
+                            {status?.tier === 'premium' ? 'Start Now' : 'Start AI Session'}
+                        </Text>
                     </TouchableOpacity>
                 </LinearGradient>
 
                 {/* Rank + Streak */}
                 <View style={styles.statsRow}>
                     <View style={styles.statCard}>
-                        <Text style={styles.statEmoji}>🔥</Text>
+                        <Ionicons name="flame" size={24} color="#F59E0B" style={{ marginBottom: 4 }} />
                         <Text style={styles.statValue}>{streak_count}</Text>
                         <Text style={styles.statLabel}>Day Streak</Text>
                     </View>
@@ -94,25 +109,20 @@ export default function HomeScreen({ navigation }: any) {
                 {/* Feature Grid */}
                 <Text style={styles.sectionTitle}>AI Features</Text>
                 <View style={styles.grid}>
-                    {FEATURES.map((f) => (
+                    {FEATURES.map((feature, i) => (
                         <TouchableOpacity
-                            key={f.label}
-                            style={styles.featureCard}
-                            onPress={() => {
-                                if (f.screen === 'BodyScan' || f.screen === 'Gamification' || f.screen === 'Coaches') {
-                                    navigation.navigate(f.screen);
-                                } else {
-                                    navigation.navigate(f.screen);
-                                }
-                            }}
-                            activeOpacity={0.8}
+                            key={i}
+                            style={styles.gridItem}
+                            onPress={() => navigation.navigate(feature.screen as any)}
+                            activeOpacity={0.7}
                         >
-                            <View style={[styles.featureIconBg, { backgroundColor: f.color + '22' }]}>
-                                <Text style={styles.featureIcon}>{f.icon}</Text>
+                            <View style={[styles.iconWrapper, { backgroundColor: feature.color + '20' }]}>
+                                <Ionicons name={feature.icon as any} size={28} color={feature.color} />
                             </View>
-                            <Text style={styles.featureLabel}>{f.label}</Text>
-                            <Text style={styles.featureDesc}>{f.desc}</Text>
-                            <View style={[styles.featureDot, { backgroundColor: f.color }]} />
+                            <View style={styles.itemText}>
+                                <Text style={styles.itemLabel}>{feature.label}</Text>
+                                <Text style={styles.itemDesc}>{feature.desc}</Text>
+                            </View>
                         </TouchableOpacity>
                     ))}
                 </View>
@@ -129,16 +139,17 @@ const styles = StyleSheet.create({
     },
     logoRow: { alignItems: 'center' },
     logoText: { fontSize: 22, fontWeight: '900', color: Colors.primary },
-    xpBadge: {
+    headerRight: {
+        flexDirection: 'row', alignItems: 'center',
         backgroundColor: Colors.primaryGlow, borderRadius: Radius.full,
         paddingHorizontal: 12, paddingVertical: 4,
     },
-    xpText: { color: Colors.primary, fontWeight: '700', fontSize: Fonts.sizes.sm },
+    xpText: { color: Colors.primary, fontWeight: '700', fontSize: Fonts.sizes.sm, marginLeft: 4 },
     hero: {
         marginHorizontal: Spacing.lg, marginTop: Spacing.md,
         borderRadius: Radius.xl, padding: Spacing.xl,
     },
-    heroGreeting: { color: 'rgba(255,255,255,0.8)', fontSize: Fonts.sizes.md, marginBottom: 4 },
+    greetingText: { color: 'rgba(255,255,255,0.8)', fontSize: Fonts.sizes.md, marginBottom: 4 },
     heroTitle: {
         fontSize: Fonts.sizes.display, fontWeight: '900',
         color: '#fff', lineHeight: 40, marginBottom: 8,
@@ -151,13 +162,9 @@ const styles = StyleSheet.create({
     heroCtaText: { color: Colors.primary, fontWeight: '800', fontSize: Fonts.sizes.md },
 
     statsRow: { flexDirection: 'row', marginHorizontal: Spacing.lg, marginTop: Spacing.md, gap: 12 },
-    statCard: {
-        backgroundColor: Colors.card, borderRadius: Radius.lg,
-        padding: Spacing.md, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, flex: 1,
-    },
-    statEmoji: { fontSize: 28, marginBottom: 4 },
-    statValue: { fontSize: Fonts.sizes.xl, fontWeight: '900', color: Colors.textPrimary },
-    statLabel: { fontSize: Fonts.sizes.xs, color: Colors.textMuted },
+    statCard: { flex: 1, backgroundColor: Colors.surface, padding: 16, borderRadius: Radius.lg, alignItems: 'center' },
+    statValue: { fontSize: 24, fontWeight: '900', color: Colors.textPrimary },
+    statLabel: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },
     rankRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 8 },
     rankBadge: { fontSize: Fonts.sizes.xl, fontWeight: '900' },
     rankXp: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary },
@@ -174,18 +181,15 @@ const styles = StyleSheet.create({
         flexDirection: 'row', flexWrap: 'wrap',
         marginHorizontal: Spacing.lg, gap: 12,
     },
-    featureCard: {
-        width: (width - 48 - 12) / 2,
-        backgroundColor: Colors.card, borderRadius: Radius.xl,
-        padding: Spacing.md, borderWidth: 1, borderColor: Colors.border,
-        position: 'relative', overflow: 'hidden',
+    gridItem: {
+        width: (width - Spacing.lg * 2 - 12) / 2, backgroundColor: Colors.surface, borderRadius: Radius.lg,
+        padding: 16, marginBottom: 0, flexDirection: 'column', gap: 12,
     },
-    featureIconBg: {
-        width: 48, height: 48, borderRadius: Radius.md,
-        alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+    iconWrapper: {
+        width: 48, height: 48, borderRadius: 16,
+        alignItems: 'center', justifyContent: 'center',
     },
-    featureIcon: { fontSize: 24 },
-    featureLabel: { fontSize: Fonts.sizes.md, fontWeight: '800', color: Colors.textPrimary, lineHeight: 22 },
-    featureDesc: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: 4 },
-    featureDot: { width: 6, height: 6, borderRadius: 3, position: 'absolute', top: 12, right: 12 },
+    itemText: { flex: 1 },
+    itemLabel: { fontSize: Fonts.sizes.md, fontWeight: '800', color: Colors.textPrimary, lineHeight: 22 },
+    itemDesc: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: 4 },
 });

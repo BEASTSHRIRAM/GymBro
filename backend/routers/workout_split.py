@@ -11,6 +11,7 @@ from database import get_db
 from models import WorkoutSplitGenerateRequest, WorkoutSplit
 from routers.auth import get_current_user
 from services.gemini_service import generate_workout_split
+from services.usage_service import check_quota, increment_usage
 
 router = APIRouter(prefix="/api/workout-split", tags=["workout-split"])
 
@@ -39,10 +40,24 @@ async def generate_workout_split_endpoint(
         "goal": request.goal,
         "activity_level": request.activity_level,
     }
+
+    user_id = str(current_user["_id"])
+
+    # Check usage quota
+    quota = await check_quota(user_id, "workout_split")
+    if not quota["allowed"]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Workout Split limit reached ({quota['used']}/{quota['limit']} this month). Upgrade to Premium for unlimited splits."
+        )
     
     try:
         # Call Gemini service to generate workout split
-        workout_split = await generate_workout_split(user_stats)
+        requirements = getattr(request, 'requirements', None)
+        workout_split = await generate_workout_split(user_stats, requirements=requirements)
+
+        # Increment usage on success
+        await increment_usage(user_id, "workout_split")
         
         # Return the generated workout split
         return workout_split

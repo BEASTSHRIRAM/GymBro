@@ -53,7 +53,7 @@ export default function CoachesScreen() {
                 date: bookingDate,
                 duration_min: 60,
             });
-            Alert.alert('✅ Booking Requested', `Booking ID: ${data.booking_id}\n\nPayment integration coming soon.`);
+            Alert.alert('Booking Requested', `Booking ID: ${data.booking_id}\n\nPayment integration coming soon.`);
             setBookingCoach(null);
             setBookingDate('');
         } catch (e: any) {
@@ -79,7 +79,10 @@ export default function CoachesScreen() {
         <View style={st.container}>
             <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
                 <View style={st.header}>
-                    <Text style={st.title}>📍 Find Coaches</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+                        <Ionicons name="location-outline" size={28} color={Colors.textPrimary} style={{ marginRight: 8 }} />
+                        <Text style={st.title}>Find Coaches</Text>
+                    </View>
                 </View>
 
                 {/* Search Bar */}
@@ -132,7 +135,7 @@ export default function CoachesScreen() {
                 {/* Empty State */}
                 {!isLoading && coaches.length === 0 && (
                     <View style={st.emptyCard}>
-                        <Text style={st.emptyIcon}>🏋️</Text>
+                        <Ionicons name="people-outline" size={40} color={Colors.textMuted} style={{ marginBottom: 16 }} />
                         <Text style={st.emptyTitle}>No coaches yet</Text>
                         <Text style={st.emptySub}>Be the first coach to register in this area!</Text>
                     </View>

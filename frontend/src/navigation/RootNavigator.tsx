@@ -33,6 +33,7 @@ import DietScreen from '../screens/DietScreen';
 import BodyScanScreen from '../screens/BodyScanScreen';
 import GamificationScreen from '../screens/GamificationScreen';
 import CoachesScreen from '../screens/CoachesScreen';
+import SubscriptionScreen from '../screens/SubscriptionScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import ProfileEditor from '../screens/ProfileEditor';
 import WorkoutSplitScreen from '../screens/WorkoutSplitScreen';
@@ -98,10 +99,10 @@ function CustomDrawerContent(props: any) {
 
     const handleLogout = () => {
         Alert.alert(
-            '😢 Are You Sure?',
+            'Are You Sure?',
             "Don't leave your Bro!",
             [
-                { text: 'Stay 💪', style: 'cancel' },
+                { text: 'Stay', style: 'cancel' },
                 {
                     text: 'Logout',
                     style: 'destructive',
@@ -166,7 +167,13 @@ function AppDrawer() {
             <Drawer.Screen
                 name="Main"
                 component={BottomTabs}
-                options={{ title: 'GymBro', drawerLabel: ' Home' }}
+                options={{
+                    title: 'GymBro',
+                    drawerLabel: 'Home',
+                    drawerIcon: ({ color, size }) => (
+                        <Ionicons name="home-outline" size={size} color={color} />
+                    ),
+                }}
             />
             <Drawer.Screen
                 name="Profile"
@@ -179,19 +186,44 @@ function AppDrawer() {
                 }}
             />
             <Drawer.Screen
+                name="Subscriptions"
+                component={SubscriptionScreen}
+                options={{
+                    drawerLabel: 'My Subscriptions',
+                    drawerIcon: ({ color, size }) => (
+                        <Ionicons name="card-outline" size={size} color={color} />
+                    ),
+                }}
+            />
+            <Drawer.Screen
                 name="BodyScan"
                 component={BodyScanScreen}
-                options={{ drawerLabel: ' AI Body Scan' }}
+                options={{
+                    drawerLabel: 'AI Body Scan',
+                    drawerIcon: ({ color, size }) => (
+                        <Ionicons name="body-outline" size={size} color={color} />
+                    ),
+                }}
             />
             <Drawer.Screen
                 name="Gamification"
                 component={GamificationScreen}
-                options={{ drawerLabel: ' Achievements' }}
+                options={{
+                    drawerLabel: 'Achievements',
+                    drawerIcon: ({ color, size }) => (
+                        <Ionicons name="trophy-outline" size={size} color={color} />
+                    ),
+                }}
             />
             <Drawer.Screen
                 name="Coaches"
                 component={CoachesScreen}
-                options={{ drawerLabel: 'Find Coaches' }}
+                options={{
+                    drawerLabel: 'Find Coaches',
+                    drawerIcon: ({ color, size }) => (
+                        <Ionicons name="people-outline" size={size} color={color} />
+                    ),
+                }}
             />
             <Drawer.Screen
                 name="YourMusic"

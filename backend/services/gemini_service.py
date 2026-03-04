@@ -8,7 +8,7 @@ from google.genai import types
 from config import get_settings
 
 settings = get_settings()
-_MODEL = "gemini-3-flash-preview"
+_MODEL = "gemini-3.1-flash-lite-preview"
 _client = None
 
 
@@ -32,6 +32,35 @@ Return ONLY a JSON array, no markdown:
     raw = response.text.strip().lstrip("```json").lstrip("```").rstrip("```")
     return json.loads(raw)
 
+
+async def generate_supplement_advice(requirements: str) -> str:
+    """Generate concise supplement recommendations based on user requirements."""
+    client = _get_client()
+    # Provide system instructions for a strict fitness coach tone
+    config = types.GenerateContentConfig(
+        system_instruction=(
+            "You are an expert fitness and supplement coach. Provide short, actionable "
+            "recommendations for supplements based on the user's specific requirements, "
+            "struggles, or goals. Do not give medical advice."
+        ),
+        temperature=0.7,
+    )
+    
+    prompt = (
+        f"The user has the following requirements or struggles: '{requirements}'. "
+        "What 2-3 supplements would you recommend? Keep it brief and explain why."
+    )
+    
+    try:
+        response = client.models.generate_content(
+            model=_MODEL,
+            contents=prompt,
+            config=config,
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"[Gemini] Supplement advice generation failed: {e}")
+        raise ValueError(f"Failed to generate advice: {e}")
 
 async def generate_posture_report(analysis_data: dict) -> str:
     prompt = f"""You are a physical therapist AI. Analyze this posture data: {analysis_data}
@@ -71,7 +100,7 @@ async def generate_coaching_response(prompt: str) -> str:
     except Exception as e:
         print(f"[Gemini] Coaching response error: {e}")
         return ""
-async def generate_workout_split(user_stats: dict) -> dict:
+async def generate_workout_split(user_stats: dict, requirements: str = None) -> dict:
     """
     Generate a personalized workout split using Gemini AI.
     
@@ -103,6 +132,8 @@ async def generate_workout_split(user_stats: dict) -> dict:
 - Height: {height} cm
 - Fitness Goal: {goal}
 - Activity Level: {activity_level}
+
+{f'Additional Requirements from user: {requirements}' if requirements else ''}
 
 Create a structured weekly workout split that includes:
 1. Optimal training frequency (3-6 days per week)

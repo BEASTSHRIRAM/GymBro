@@ -21,6 +21,7 @@ interface AuthState {
     user: User | null;
     isAuthenticated: boolean;
     isLoading: boolean;
+    isInitializing: boolean;
     error: string | null;
     resendSuccess: string | null;
     resendError: string | null;
@@ -66,6 +67,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     isAuthenticated: false,
     isLoading: false,
+    isInitializing: true,
     error: null,
     resendSuccess: null,
     resendError: null,
@@ -77,17 +79,17 @@ export const useAuthStore = create<AuthState>((set) => ({
     clearResendMessages: () => set({ resendSuccess: null, resendError: null }),
 
     loadUser: async () => {
-        set({ isLoading: true });
+        set({ isInitializing: true });
         try {
             const token = await SecureStore.getItemAsync('access_token');
             if (!token) {
-                set({ isLoading: false, isAuthenticated: false });
+                set({ isInitializing: false, isAuthenticated: false });
                 return;
             }
             const { data } = await api.get('/auth/me');
-            set({ user: data, isAuthenticated: true, isLoading: false });
+            set({ user: data, isAuthenticated: true, isInitializing: false });
         } catch {
-            set({ isAuthenticated: false, isLoading: false });
+            set({ isAuthenticated: false, isInitializing: false });
         }
     },
 
@@ -122,8 +124,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     verifyOtp: async (email, otp) => {
         set({ isLoading: true, error: null });
         try {
-            await api.post('/auth/verify-otp', { email, otp });
-            set({ isLoading: false });
+            const { data } = await api.post('/auth/verify-otp', { email, otp });
+            // New verify-otp returns JWT tokens + user for auto-login
+            if (data.access_token && data.refresh_token) {
+                await SecureStore.setItemAsync('access_token', data.access_token);
+                await SecureStore.setItemAsync('refresh_token', data.refresh_token);
+                set({ user: data.user, isAuthenticated: true, isLoading: false });
+            } else {
+                set({ isLoading: false });
+            }
         } catch (e: any) {
             set({
                 error: parseError(e, 'OTP verification failed'),

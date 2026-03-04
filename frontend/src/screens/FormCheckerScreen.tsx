@@ -15,10 +15,10 @@ import { playAudioBase64, stopAudio } from '../services/audioService';
 import { Colors, Spacing, Radius, Fonts, getFormScoreColor } from '../theme';
 
 const EXERCISES = [
-    { key: 'squat', label: 'Squat', icon: '🏋️' },
-    { key: 'bench_press', label: 'Bench Press', icon: '💪' },
-    { key: 'deadlift', label: 'Deadlift', icon: '⚡' },
-    { key: 'shoulder_press', label: 'Shoulder Press', icon: '🎯' },
+    { key: 'squat', label: 'Squat', icon: 'barbell-outline' },
+    { key: 'bench_press', label: 'Bench Press', icon: 'fitness-outline' },
+    { key: 'deadlift', label: 'Deadlift', icon: 'flash-outline' },
+    { key: 'shoulder_press', label: 'Shoulder Press', icon: 'arrow-up-circle-outline' },
 ];
 
 export default function FormCheckerScreen() {
@@ -156,7 +156,7 @@ export default function FormCheckerScreen() {
                 <View style={styles.faultRow}>
                     {faults.map((f, idx) => (
                         <View key={idx} style={styles.faultChip}>
-                            <Text style={styles.faultText}>⚠️ {f.replace(/_/g, ' ')}</Text>
+                            <Text style={styles.faultText}> Form note: {f.replace(/_/g, ' ')}</Text>
                         </View>
                     ))}
                 </View>

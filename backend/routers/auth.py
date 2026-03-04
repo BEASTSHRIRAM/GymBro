@@ -80,6 +80,8 @@ class ResendOTPRequest(BaseModel):
 @router.post("/register", status_code=201)
 async def register(payload: UserCreate):
     db = get_db()
+
+    # Check if a verified user already exists
     existing = await db["users"].find_one({"email": payload.email})
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -87,48 +89,101 @@ async def register(payload: UserCreate):
     otp = generate_otp()
     expires = get_otp_expiry()
 
-    user_doc = UserInDB(
-        name=payload.name,
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        age=payload.age,
-        height=payload.height,
-        weight=payload.weight,
-        goal=payload.goal,
-        activity_level=payload.activity_level,
-        otp_code=otp,
-        otp_expires=expires,
-        is_verified=False,
-    ).model_dump()
+    # Check if there's already a pending registration for this email
+    pending = await db["pending_registrations"].find_one({"email": payload.email})
 
-    await db["users"].insert_one(user_doc)
+    if pending:
+        # Update existing pending registration with new OTP and data
+        await db["pending_registrations"].update_one(
+            {"email": payload.email},
+            {"$set": {
+                "name": payload.name,
+                "password_hash": hash_password(payload.password),
+                "age": payload.age,
+                "height": payload.height,
+                "weight": payload.weight,
+                "goal": payload.goal,
+                "activity_level": payload.activity_level,
+                "otp_code": otp,
+                "otp_expires": expires,
+                "last_otp_generated_at": datetime.utcnow(),
+            }}
+        )
+    else:
+        # Insert new pending registration
+        pending_doc = {
+            "name": payload.name,
+            "email": payload.email,
+            "password_hash": hash_password(payload.password),
+            "age": payload.age,
+            "height": payload.height,
+            "weight": payload.weight,
+            "goal": payload.goal,
+            "activity_level": payload.activity_level,
+            "otp_code": otp,
+            "otp_expires": expires,
+            "created_at": datetime.utcnow(),
+            "last_otp_generated_at": datetime.utcnow(),
+        }
+        await db["pending_registrations"].insert_one(pending_doc)
 
     try:
         await send_otp_email(payload.email, otp)
     except Exception as e:
         print(f"[Auth] OTP email failed: {e}")
 
-    return {"message": "Registration successful. Check your email for OTP."}
+    return {"message": "OTP sent to your email. Please verify to complete registration."}
 
 
 @router.post("/verify-otp")
 async def verify_otp(payload: OTPVerify):
     db = get_db()
-    user = await db["users"].find_one({"email": payload.email})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.get("is_verified"):
-        raise HTTPException(status_code=400, detail="Account already verified")
-    if user.get("otp_code") != payload.otp:
-        raise HTTPException(status_code=400, detail="Invalid OTP")
-    if user.get("otp_expires") and datetime.utcnow() > user["otp_expires"]:
-        raise HTTPException(status_code=400, detail="OTP expired")
 
-    await db["users"].update_one(
-        {"email": payload.email},
-        {"$set": {"is_verified": True, "otp_code": None, "otp_expires": None}},
-    )
-    return {"message": "Email verified successfully. You can now log in."}
+    # Look up in pending_registrations
+    pending = await db["pending_registrations"].find_one({"email": payload.email})
+    if not pending:
+        # Also check if user is already verified in users collection
+        existing = await db["users"].find_one({"email": payload.email})
+        if existing and existing.get("is_verified"):
+            raise HTTPException(status_code=400, detail="Account already verified. Please log in.")
+        raise HTTPException(status_code=404, detail="No pending registration found. Please register first.")
+
+    if pending.get("otp_code") != payload.otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+    if pending.get("otp_expires") and datetime.utcnow() > pending["otp_expires"]:
+        raise HTTPException(status_code=400, detail="OTP expired. Please request a new one.")
+
+    # Move user from pending_registrations → users
+    user_doc = UserInDB(
+        name=pending["name"],
+        email=pending["email"],
+        password_hash=pending["password_hash"],
+        age=pending.get("age"),
+        height=pending.get("height"),
+        weight=pending.get("weight"),
+        goal=pending.get("goal"),
+        activity_level=pending.get("activity_level"),
+        otp_code=None,
+        otp_expires=None,
+        is_verified=True,
+    ).model_dump()
+
+    result = await db["users"].insert_one(user_doc)
+    await db["pending_registrations"].delete_one({"email": payload.email})
+
+    # Generate JWT tokens for auto-login
+    uid = str(result.inserted_id)
+    user_doc["_id"] = result.inserted_id
+    access = create_access_token(uid, pending["email"], "user")
+    refresh = create_refresh_token(uid)
+
+    return {
+        "message": "Email verified successfully.",
+        "access_token": access,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "user": serialize_user(user_doc),
+    }
 
 
 @router.post("/login")
@@ -179,42 +234,30 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 @router.post("/resend-otp")
 async def resend_otp(payload: ResendOTPRequest):
     """
-    Resend OTP endpoint with rate limiting.
-    
-    - Query user by email
-    - Return 404 if user not found
-    - Return 400 if account already verified
-    - Check rate limit (60-second cooldown)
-    - Return 429 with remaining seconds if cooldown active
-    - Generate new 6-digit OTP code
-    - Update user document with new OTP, expiration, and timestamp
-    - Send OTP email
-    - Return success response with cooldown_seconds
+    Resend OTP for pending registration.
+    Queries pending_registrations (not users) since unverified users aren't in users collection.
     """
     db = get_db()
     
-    # Log resend request received
     print(f"[Auth] Resend OTP request received - email: {payload.email}, timestamp: {datetime.utcnow().isoformat()}")
     
-    # Query user by email
-    user = await db["users"].find_one({"email": payload.email})
+    # Query pending_registrations
+    pending = await db["pending_registrations"].find_one({"email": payload.email})
     
-    # Return 404 if user not found
-    if not user:
-        print(f"[Auth] Resend OTP failed - reason: User not found, email: {payload.email}, timestamp: {datetime.utcnow().isoformat()}")
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Return 400 if account already verified
-    if user.get("is_verified"):
-        print(f"[Auth] Resend OTP failed - reason: Account already verified, email: {payload.email}, timestamp: {datetime.utcnow().isoformat()}")
-        raise HTTPException(status_code=400, detail="Account already verified")
+    if not pending:
+        # Check if already verified in users
+        existing = await db["users"].find_one({"email": payload.email})
+        if existing:
+            print(f"[Auth] Resend OTP failed - reason: Account already verified, email: {payload.email}")
+            raise HTTPException(status_code=400, detail="Account already verified. Please log in.")
+        print(f"[Auth] Resend OTP failed - reason: No pending registration, email: {payload.email}")
+        raise HTTPException(status_code=404, detail="No pending registration found. Please register first.")
     
     # Check rate limit
-    is_allowed, remaining_seconds = check_rate_limit(user)
+    is_allowed, remaining_seconds = check_rate_limit(pending)
     
-    # Return 429 with remaining seconds if cooldown active
     if not is_allowed:
-        print(f"[Auth] Resend OTP rate limited - email: {payload.email}, remaining_cooldown: {remaining_seconds}s, timestamp: {datetime.utcnow().isoformat()}")
+        print(f"[Auth] Resend OTP rate limited - email: {payload.email}, remaining_cooldown: {remaining_seconds}s")
         return JSONResponse(
             status_code=429,
             content={
@@ -223,12 +266,11 @@ async def resend_otp(payload: ResendOTPRequest):
             }
         )
     
-    # Generate new 6-digit OTP code
+    # Generate new OTP
     otp = generate_otp()
     expires = get_otp_expiry()
     
-    # Update user document with new OTP, expiration (10 min), and timestamp
-    await db["users"].update_one(
+    await db["pending_registrations"].update_one(
         {"email": payload.email},
         {
             "$set": {
@@ -239,17 +281,14 @@ async def resend_otp(payload: ResendOTPRequest):
         }
     )
     
-    # Send OTP email
     try:
         await send_otp_email(payload.email, otp)
     except Exception as e:
-        print(f"[Auth] Resend OTP failed - reason: Email send failed ({e}), email: {payload.email}, timestamp: {datetime.utcnow().isoformat()}")
+        print(f"[Auth] Resend OTP failed - reason: Email send failed ({e}), email: {payload.email}")
         raise HTTPException(status_code=500, detail="Failed to send OTP")
     
-    # Log success event
-    print(f"[Auth] Resend OTP success - email: {payload.email}, timestamp: {datetime.utcnow().isoformat()}")
+    print(f"[Auth] Resend OTP success - email: {payload.email}")
     
-    # Return success response with cooldown_seconds
     return {
         "message": "New OTP sent to your email",
         "cooldown_seconds": 60
