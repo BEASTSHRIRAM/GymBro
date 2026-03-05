@@ -1,7 +1,4 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-# More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
-
 name: Build and deploy Python app to Azure Web App - gymbro
 
 on:
@@ -21,17 +18,23 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Copy all files from backend to a clean working directory
-      - name: Prepare deployment folder
+      - name: Create venv and install dependencies
         run: |
-          mkdir python-app
-          rsync -a --exclude='.venv' --exclude='antenv' --exclude='.env' --exclude='__pycache__' --exclude='.pytest_cache' backend/ python-app/
+          cd backend
+          python -m venv antenv
+          source antenv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Prepare deployment package
+        run: |
+          mkdir deploy
+          rsync -a --exclude='.venv' --exclude='.env' --exclude='__pycache__' --exclude='.pytest_cache' backend/ deploy/
 
       - name: Upload artifact for deployment jobs
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: python-app/
+          path: deploy/
 
   deploy:
     runs-on: ubuntu-latest
@@ -44,7 +47,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
-          path: .
 
       - name: Login to Azure
         uses: azure/login@v2
