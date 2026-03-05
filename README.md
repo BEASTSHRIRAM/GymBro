@@ -87,6 +87,14 @@ npx expo start
 
 ---
 
+## 🚢 Deployment
+
+Deployed to **Azure App Service for Containers**. We provide two guides depending on your preference:
+*   [Azure Deployment Guide (Portal Method)](file:///C:/Users/Asus/.gemini/antigravity/brain/dd75a13d-7488-474d-9f99-d9dde62b255f/azure_deployment_guide_portal.md) — **Recommended** for a GUI-based setup.
+*   [Azure Deployment Guide (CLI Method)](file:///C:/Users/Asus/.gemini/antigravity/brain/dd75a13d-7488-474d-9f99-d9dde62b255f/azure_deployment_guide.md) — For automated terminal-based setup.
+
+---
+
 ## 🧹 Security & Environment
 All sensitive configurations are managed via `.env` in the `backend/` directory. **Never** hardcode keys. Reference the `.env.example` for the required keys: `GEMINI_API_KEY`, `STREAM_API_KEY`, `ELEVENLABS_API_KEY`, and `DEEPGRAM_API_KEY`.
 
