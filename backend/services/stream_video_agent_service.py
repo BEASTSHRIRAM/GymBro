@@ -6,8 +6,9 @@ Based on: https://github.com/GetStream/Vision-Agents/tree/main/examples/02_golf_
 Architecture (matches golf coach example exactly):
 - Gemini Realtime handles speech-to-text, text-to-speech AND vision in a
   single model call → zero extra round-trip latency.
-- YOLO Pose Processor overlays skeleton on the video frames sent to Gemini
-  so the LLM can see exact joint positions for rep counting & form analysis.
+- YOLO Pose Processor (optional) overlays skeleton on the video frames sent
+  to Gemini so the LLM can see exact joint positions. Falls back to Gemini
+  Vision-only mode if ultralytics is not installed (works on small servers).
 - fps=10 for responsive real-time coaching (golf coach uses 10).
 """
 import os
@@ -21,8 +22,14 @@ logger = logging.getLogger(__name__)
 
 try:
     from vision_agents.core import Agent, User
-    from vision_agents.plugins import getstream, gemini, ultralytics
+    from vision_agents.plugins import getstream, gemini
     from vision_agents.core.edge import events as core_events
+    try:
+        from vision_agents.plugins import ultralytics
+        YOLO_AVAILABLE = True
+    except ImportError:
+        YOLO_AVAILABLE = False
+        print("[GymAgent] ultralytics not installed — running without YOLO pose overlay")
     VISION_AGENTS_AVAILABLE = True
 except ImportError:
     VISION_AGENTS_AVAILABLE = False
@@ -223,15 +230,23 @@ class GymAgentService:
 
         # Gemini Realtime handles STT + TTS + Vision in ONE model call.
         # fps=10 matches the golf coach reference example for responsive coaching.
-        # YOLO overlays skeleton keypoints on every frame → Gemini sees joint angles.
+        # YOLO overlays skeleton keypoints if available, otherwise Gemini
+        # Vision analyzes the raw video frames directly (still very effective).
+        processors = []
+        if YOLO_AVAILABLE:
+            processors.append(
+                ultralytics.YOLOPoseProcessor(model_path="yolo11n-pose.pt")
+            )
+            print(f"[GymAgent] Using YOLO pose processor for {exercise}")
+        else:
+            print(f"[GymAgent] No YOLO — Gemini Vision will analyze frames directly")
+
         agent = Agent(
             edge=getstream.Edge(),
             agent_user=User(name="GymBro Coach", id="gymbro-coach"),
             instructions=instructions,
             llm=gemini.Realtime(fps=10),
-            processors=[
-                ultralytics.YOLOPoseProcessor(model_path="yolo11n-pose.pt")
-            ],
+            processors=processors,
         )
 
         return agent

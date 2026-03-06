@@ -18,11 +18,17 @@ load_dotenv()
 
 try:
     from vision_agents.core import Agent, User
-    from vision_agents.plugins import getstream, gemini, deepgram, elevenlabs, ultralytics
+    from vision_agents.plugins import getstream, gemini, deepgram, elevenlabs
     VISION_AGENTS_AVAILABLE = True
+    try:
+        from vision_agents.plugins import ultralytics
+        YOLO_AVAILABLE = True
+    except ImportError:
+        YOLO_AVAILABLE = False
 except ImportError:
     VISION_AGENTS_AVAILABLE = False
-    print("[VisionAgentsVideo] SDK not installed. Install with: uv add 'vision-agents[getstream,gemini,deepgram,elevenlabs,nvidia,huggingface,ultralytics]'")
+    YOLO_AVAILABLE = False
+    print("[VisionAgentsVideo] SDK not installed. Install with: pip install 'vision-agents[getstream,gemini,deepgram,elevenlabs]'")
 
 from config import get_settings
 
@@ -65,18 +71,21 @@ class GymBroVideoAgent:
     ) -> dict:
         """Start a new video training session"""
         try:
-            # Create agent for this session with Stream Edge and YOLO pose processor
-            # Use custom pipeline (LLM + STT + TTS) instead of Realtime for full control
+            # Build processors list — use YOLO if available
+            processors = []
+            if YOLO_AVAILABLE:
+                processors.append(
+                    ultralytics.YOLOPoseProcessor(model_path="yolo11n-pose.pt")
+                )
+
             agent = Agent(
                 edge=getstream.Edge(),
                 agent_user=User(name="GymBro Trainer", id="agent"),
                 instructions=f"You are a gym trainer analyzing {exercise} form. Provide real-time feedback on form, count reps, and detect faults. Be concise and encouraging.",
-                llm=gemini.LLM("gemini-3.0-flash-preview"),  # Use regular LLM, not Realtime
+                llm=gemini.LLM("gemini-3.0-flash-preview"),
                 stt=deepgram.STT(),
                 tts=elevenlabs.TTS(),
-                processors=[
-                    ultralytics.YOLOPoseProcessor(model_path="yolo11n-pose.pt")
-                ],
+                processors=processors,
             )
             
             self.agents[session_id] = agent

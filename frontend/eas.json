@@ -15,7 +15,8 @@
         "buildType": "apk"
       },
       "env": {
-        "npm_config_legacy_peer_deps": "true"
+        "npm_config_legacy_peer_deps": "true",
+        "EXPO_PUBLIC_API_URL": "https://gymbro-ccf4dbf8aga9f3fj.centralindia-01.azurewebsites.net"
       }
     },
     "production": {
