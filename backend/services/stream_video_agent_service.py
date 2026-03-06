@@ -50,107 +50,108 @@ settings = get_settings()
 # pending-track poll times out, look for ANY track in the track map from the
 # same user with the right type and emit the event using that track ID.
 if VISION_AGENTS_AVAILABLE:
-    from vision_agents.plugins.getstream import stream_edge_transport as _set
-    from vision_agents.plugins.getstream import sfu_events as _sfu_events
+    try:
+        from vision_agents.plugins.getstream import stream_edge_transport as _set
+        from vision_agents.plugins.getstream import sfu_events as _sfu_events
 
-    _original_on_track_published = _set.StreamEdge._on_track_published
+        _original_on_track_published = _set.StreamEdge._on_track_published
 
-    async def _patched_on_track_published(self, event: _sfu_events.TrackPublishedEvent):
-        """Patched handler that won't raise TimeoutError on duplicate tracks."""
-        if not event.payload:
-            return
+        async def _patched_on_track_published(self, event: _sfu_events.TrackPublishedEvent):
+            """Patched handler that won't raise TimeoutError on duplicate tracks."""
+            if not event.payload:
+                return
 
-        if event.participant and event.participant.user_id:
-            session_id = event.participant.session_id
-            user_id = event.participant.user_id
-        else:
-            user_id = event.payload.user_id
-            session_id = event.payload.session_id
+            if event.participant and event.participant.user_id:
+                session_id = event.participant.session_id
+                user_id = event.participant.user_id
+            else:
+                user_id = event.payload.user_id
+                session_id = event.payload.session_id
 
-        track_type_int = event.payload.type
-        track_type = _set._to_core_track_type(track_type_int)
-        webrtc_track_kind = self._get_webrtc_kind(track_type_int)
+            track_type_int = event.payload.type
+            track_type = _set._to_core_track_type(track_type_int)
+            webrtc_track_kind = self._get_webrtc_kind(track_type_int)
 
-        is_agent_track = user_id == self.agent_user_id
-        if is_agent_track:
-            return
+            is_agent_track = user_id == self.agent_user_id
+            if is_agent_track:
+                return
 
-        # Check if track already exists in map
-        track_key = (user_id, session_id, track_type_int)
-        if track_key in self._track_map:
-            self._track_map[track_key]["published"] = True
-            track_id = self._track_map[track_key]["track_id"]
-            self.events.send(
-                core_events.TrackAddedEvent(
-                    plugin_name="getstream",
-                    track_id=track_id,
-                    track_type=track_type,
-                    participant=_set._to_core_participant(event.participant),
-                )
-            )
-            return
-
-        # Wait for pending track (shortened timeout — 15s)
-        track_id = None
-        timeout = 15.0
-        poll_interval = 0.05
-        elapsed = 0.0
-
-        while elapsed < timeout:
-            for tid, (pu, ps, pk) in list(self._pending_tracks.items()):
-                if pu == user_id and ps == session_id and pk == webrtc_track_kind:
-                    track_id = tid
-                    del self._pending_tracks[tid]
-                    break
-            if track_id:
-                break
-            await asyncio.sleep(poll_interval)
-            elapsed += poll_interval
-
-        if track_id:
-            self._track_map[track_key] = {"track_id": track_id, "published": True}
-            self.events.send(
-                core_events.TrackAddedEvent(
-                    plugin_name="getstream",
-                    track_id=track_id,
-                    track_type=track_type,
-                    participant=_set._to_core_participant(event.participant),
-                )
-            )
-        else:
-            # ── Graceful fallback ──
-            # Instead of raising TimeoutError, try to find any track from
-            # the same user_id with the matching type (different session).
-            fallback_id = None
-            for (mu, ms, mt), minfo in self._track_map.items():
-                if mu == user_id and mt == track_type_int and minfo.get("track_id"):
-                    fallback_id = minfo["track_id"]
-                    break
-
-            if fallback_id:
-                logger.warning(
-                    f"[GymAgent-patch] Track timeout for {track_type.name} "
-                    f"from {user_id} session {session_id} — using fallback "
-                    f"track {fallback_id}"
-                )
-                self._track_map[track_key] = {"track_id": fallback_id, "published": True}
+            # Check if track already exists in map
+            track_key = (user_id, session_id, track_type_int)
+            if track_key in self._track_map:
+                self._track_map[track_key]["published"] = True
+                track_id = self._track_map[track_key]["track_id"]
                 self.events.send(
                     core_events.TrackAddedEvent(
                         plugin_name="getstream",
-                        track_id=fallback_id,
+                        track_id=track_id,
+                        track_type=track_type,
+                        participant=_set._to_core_participant(event.participant),
+                    )
+                )
+                return
+
+            # Wait for pending track (shortened timeout — 15s)
+            track_id = None
+            timeout = 15.0
+            poll_interval = 0.05
+            elapsed = 0.0
+
+            while elapsed < timeout:
+                for tid, (pu, ps, pk) in list(self._pending_tracks.items()):
+                    if pu == user_id and ps == session_id and pk == webrtc_track_kind:
+                        track_id = tid
+                        del self._pending_tracks[tid]
+                        break
+                if track_id:
+                    break
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+
+            if track_id:
+                self._track_map[track_key] = {"track_id": track_id, "published": True}
+                self.events.send(
+                    core_events.TrackAddedEvent(
+                        plugin_name="getstream",
+                        track_id=track_id,
                         track_type=track_type,
                         participant=_set._to_core_participant(event.participant),
                     )
                 )
             else:
-                logger.warning(
-                    f"[GymAgent-patch] Track timeout for {track_type.name} "
-                    f"from {user_id} — no fallback available. "
-                    f"Pending: {self._pending_tracks}, Map: {self._track_map}"
-                )
+                # ── Graceful fallback ──
+                fallback_id = None
+                for (mu, ms, mt), minfo in self._track_map.items():
+                    if mu == user_id and mt == track_type_int and minfo.get("track_id"):
+                        fallback_id = minfo["track_id"]
+                        break
 
-    _set.StreamEdge._on_track_published = _patched_on_track_published
-    print("[GymAgent] ✓ Patched StreamEdge._on_track_published (no more TimeoutError)")
+                if fallback_id:
+                    logger.warning(
+                        f"[GymAgent-patch] Track timeout for {track_type.name} "
+                        f"from {user_id} session {session_id} — using fallback "
+                        f"track {fallback_id}"
+                    )
+                    self._track_map[track_key] = {"track_id": fallback_id, "published": True}
+                    self.events.send(
+                        core_events.TrackAddedEvent(
+                            plugin_name="getstream",
+                            track_id=fallback_id,
+                            track_type=track_type,
+                            participant=_set._to_core_participant(event.participant),
+                        )
+                    )
+                else:
+                    logger.warning(
+                        f"[GymAgent-patch] Track timeout for {track_type.name} "
+                        f"from {user_id} — no fallback available. "
+                        f"Pending: {self._pending_tracks}, Map: {self._track_map}"
+                    )
+
+        _set.StreamEdge._on_track_published = _patched_on_track_published
+        print("[GymAgent] ✓ Patched StreamEdge._on_track_published (no more TimeoutError)")
+    except (ImportError, AttributeError) as patch_err:
+        print(f"[GymAgent] ⚠ Monkey-patch skipped (SDK internals changed): {patch_err}")
 # ── End monkey-patch ─────────────────────────────────────────────────────────
 
 # ── Instruction files ────────────────────────────────────────────────────────
