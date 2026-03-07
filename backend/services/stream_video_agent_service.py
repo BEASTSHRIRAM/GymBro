@@ -18,6 +18,35 @@ from typing import Dict, Optional
 from datetime import datetime
 from pathlib import Path
 
+# --- FIX: PATCH BUGGY AIOHTTP DNS RESOLVER ON WINDOWS ---
+import aiohttp
+import asyncio
+import socket
+
+class SystemResolver(aiohttp.abc.AbstractResolver):
+    """Bypasses buggy aiohttp threaded resolver and uses native system calls."""
+    async def resolve(self, host: str, port: int = 0, family: int = 0) -> list:
+        infos = await asyncio.get_event_loop().run_in_executor(
+            None, socket.getaddrinfo, host, port, family, socket.SOCK_STREAM
+        )
+        results = []
+        for family, type, proto, canonname, sockaddr in infos:
+            results.append({
+                'hostname': host, 'host': sockaddr[0], 'port': sockaddr[1],
+                'family': family, 'proto': proto, 'flags': socket.AI_NUMERICHOST,
+            })
+        return results
+    async def close(self) -> None:
+        pass
+
+# Force every aiohttp connection (including from Vision Agents SDK) to use this
+_original_init = aiohttp.TCPConnector.__init__
+def _patched_init(self, *args, **kwargs):
+    if 'resolver' not in kwargs: kwargs['resolver'] = SystemResolver()
+    _original_init(self, *args, **kwargs)
+aiohttp.TCPConnector.__init__ = _patched_init
+# --------------------------------------------------------------------------
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -217,7 +246,32 @@ class GymAgentService:
         else:
             print("[GymAgent] ✗ Vision Agents SDK not available")
 
-    async def create_agent(self, exercise: str = "squat") -> Optional["Agent"]:
+    async def _fetch_mcp_context(self, user_id: str) -> str:
+        """Fetch system prompt context from the standalone MCP Server."""
+        try:
+            from mcp import ClientSession, StdioServerParameters
+            from mcp.client.stdio import stdio_client
+            
+            # Connect using uv to run the mcp server script
+            server_params = StdioServerParameters(
+                command="uv",
+                args=["run", "gymbro_mcp_server.py"],
+                env=None
+            )
+            print(f"[GymAgent] Fetching MCP context for user {user_id}...")
+            async with stdio_client(server_params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.call_tool(
+                        "get_system_prompt_context", 
+                        arguments={"user_id": user_id}
+                    )
+                    return result.content[0].text
+        except Exception as e:
+            print(f"[GymAgent] ⚠ MCP Client Error fetching context for {user_id}: {e}")
+            return ""
+
+    async def create_agent(self, exercise: str = "squat", user_id: Optional[str] = None) -> Optional["Agent"]:
         """
         Create a Vision Agents Agent for gym coaching.
         Mirrors the golf coach example exactly:
@@ -228,6 +282,13 @@ class GymAgentService:
             return None
 
         instructions = _load_instructions(exercise)
+        
+        # Inject MCP System Prompt
+        if user_id:
+            mcp_context = await self._fetch_mcp_context(user_id)
+            if mcp_context:
+                instructions += f"\n\n--- IMPORTANT GYMBRO CONTEXT ---\n{mcp_context}"
+                print(f"[GymAgent] ✓ Injected MCP context into agent instructions")
 
         # Gemini Realtime handles STT + TTS + Vision in ONE model call.
         # fps=10 matches the golf coach reference example for responsive coaching.
@@ -280,7 +341,7 @@ class GymAgentService:
             return {"error": "Session already active"}
 
         try:
-            agent = await self.create_agent(exercise)
+            agent = await self.create_agent(exercise, user_id=user_id)
             if not agent:
                 return {"error": "Failed to create agent"}
 

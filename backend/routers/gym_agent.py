@@ -96,6 +96,41 @@ async def end_training(
     context_service = get_context_service()
     await context_service.save_training_summary(user_id, summary)
 
+    # Automatically log the workout summary to the external MCP Vector DB Memory!
+    try:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        
+        server_params = StdioServerParameters(command="uv", args=["run", "gymbro_mcp_server.py"], env=None)
+        
+        async def _log_to_mcp():
+            async with stdio_client(server_params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    
+                    # Convert dict summary to a nice readable text paragraph for Vector storage
+                    summary_str = (
+                        f"Workout: {summary.get('exercise', 'unknown')}. "
+                        f"Duration: {summary.get('duration_seconds', 0)} seconds. "
+                        f"Overall form score: {summary.get('avg_form_score', 0)}%. "
+                        f"Faults observed: {', '.join(summary.get('unique_faults', [])) or 'None'}."
+                    )
+                    
+                    await session.call_tool(
+                        "log_workout_to_long_term_memory",
+                        arguments={
+                            "user_id": user_id, 
+                            "timestamp": summary.get("timestamp", ""),
+                            "summary": summary_str
+                        }
+                    )
+                    print(f"[Router] ✓ Sent workout summary to MCP Vector DB")
+        
+        # Fire and forget in the background so we don't block the user's return
+        asyncio.create_task(_log_to_mcp())
+    except Exception as e:
+        print(f"[Router] ⚠ Failed to log to MCP: {e}")
+
     return summary
 
 

@@ -1,8 +1,36 @@
 """
 GymBro — FastAPI Main Application
 """
+import os
+import aiohttp
+import asyncio
+import socket
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+
+# --- FIX: PATCH BUGGY AIOHTTP DNS RESOLVER ON WINDOWS ---
+class SystemResolver(aiohttp.abc.AbstractResolver):
+    async def resolve(self, host: str, port: int = 0, family: int = 0) -> list:
+        infos = await asyncio.get_event_loop().run_in_executor(
+            None, socket.getaddrinfo, host, port, family, socket.SOCK_STREAM
+        )
+        results = []
+        for family, type, proto, canonname, sockaddr in infos:
+            results.append({
+                'hostname': host, 'host': sockaddr[0], 'port': sockaddr[1],
+                'family': family, 'proto': proto, 'flags': socket.AI_NUMERICHOST,
+            })
+        return results
+    async def close(self) -> None: pass
+
+_original_init = aiohttp.TCPConnector.__init__
+def _patched_init(self, *args, **kwargs):
+    if 'resolver' not in kwargs: kwargs['resolver'] = SystemResolver()
+    _original_init(self, *args, **kwargs)
+aiohttp.TCPConnector.__init__ = _patched_init
+# --------------------------------------------------------------------------
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
