@@ -30,13 +30,15 @@ GymBro isn't just a tracker; it’s a living context engine that acts as your pe
 
 ---
 
-## 🧠 Brain Activity: Context Persistence
+---
 
-GymBro is built on a **Central Context Engine** that ensures the AI doesn't forget who you are. This engine aggregates:
-1.  **Bio-Data**: Weight, height, age, and gender.
-2.  **Training History**: Last 50 workout summaries including average form scores and common faults.
-3.  **Voice Insights**: Remembers previous questions you've asked the AI coach.
-4.  **Posture History**: Maintains a baseline of your skeletal alignment to track improvements.
+## 🧠 Brain Architecture: The MCP CNS
+
+GymBro now uses a **Central Nervous System (CNS)** based on the Model Context Protocol (MCP). This standalone "Brain" server aggregates all user context into three tiers of memory for the AI Agent:
+
+1.  **Short-Term (Redis)**: Real-time chat history and ultra-fast profile caching.
+2.  **Hard Facts (MongoDB Atlas)**: Persistent user profiles, goals, and medical data.
+3.  **Long-Term/Semantic (Qdrant)**: A vector database that stores multi-dimensional "memories" of past workouts, allowing the AI to actually learn from your previous sessions.
 
 ---
 
@@ -45,61 +47,62 @@ GymBro is built on a **Central Context Engine** that ensures the AI doesn't forg
 | Category | Technology |
 | :--- | :--- |
 | **Mobile App** | React Native, Expo, TypeScript |
-| **Design Language** | Glassmorphic Dark UI, Ionicons, Linear Gradients |
-| **Backend** | FastAPI (Python 3.11), Uvicorn (High-Concurrency) |
+| **Backend** | FastAPI (Python 3.12), Uvicorn |
+| **Brain (MCP)** | Model Context Protocol (FastMCP), Redis, MongoDB, Qdrant |
 | **Compute Vision** | VisionAgents SDK, YOLO11, NumPy, OpenCV |
-| **Large Language Models** | Google Gemini 1.5 Flash (Context Framing) |
+| **Large Language Models** | Gemini 1.5 Flash (Context Framing), Gemini Realtime |
 | **Real-time Protocol** | WebRTC (Stream), WebSocket (Full-Duplex) |
-| **Persistence** | MongoDB (Motor Async), Atlas Geo-Spatial Indexing |
-
----
-
-## 🗺️ Roadmap: The Future of GymBro
-
-*   [ ] **Velkey Integration**: We are moving towards **Velkey** for ultra-optimized user context storage. This will allow the AI to retrieve years of training context in milliseconds, providing an even more personalized and predictive coaching experience.
-*   [ ] **Wearable Sync**: Direct integration with Apple Health and Google Fit for heart-rate-aware sessions.
-*   [ ] **Multi-Camera Form Check**: Simultaneous front/side analysis for 3D form verification.
-*   [ ] **Recipe Scanner**: Photo-to-Macro conversion for instant nutrition logging.
+| **Persistence** | MongoDB Atlas, Qdrant Vector Engine |
 
 ---
 
 ## 🏁 Installation
 
-### Backend (Python Core)
-*Ensure you have Python 3.11+ installed.*
-
+### 1. Database Setup (Docker)
+Ensure Docker is running, then start the local infrastructure:
 ```bash
 cd backend
-python -m venv venv
-# Activate & Install
-source venv/bin/activate # Mac/Linux
-pip install -r requirements.txt
-# Start the engine
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+docker-compose up -d
 ```
 
-### Frontend (Expo App)
+### 2. Brain (MCP Server)
+```bash
+cd backend
+uv run gymbro_mcp_server.py
+```
+
+### 3. Backend (FastAPI Core)
+```bash
+cd backend
+# Starts the server on port 8080 (fixes Windows port bugs)
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 8080
+```
+
+### 4. Frontend (Expo App)
 ```bash
 cd frontend
 npm install
-npx expo start
+npx expo start --clear
 ```
 
 ---
 
 ## 🚢 Deployment
 
-Deployed to **Azure App Service for Containers**. We provide two guides depending on your preference:
-*   [Azure Deployment Guide (Portal Method)](file:///C:/Users/Asus/.gemini/antigravity/brain/dd75a13d-7488-474d-9f99-d9dde62b255f/azure_deployment_guide_portal.md) — **Recommended** for a GUI-based setup.
-*   [Azure Deployment Guide (CLI Method)](file:///C:/Users/Asus/.gemini/antigravity/brain/dd75a13d-7488-474d-9f99-d9dde62b255f/azure_deployment_guide.md) — For automated terminal-based setup.
+Deployed to **Azure App Service for Containers**. We provide specialized guides for the new architecture:
+*   [Azure MCP Deployment Guide](file:///C:/Users/nages/.gemini/antigravity/brain/6f0d7068-ecfc-41eb-9339-f85809fb44b5/azure_mcp_deployment.md) — **New architecture build**.
+*   [GymBro Integration Guide](file:///C:/Users/nages/.gemini/antigravity/brain/6f0d7068-ecfc-41eb-9339-f85809fb44b5/mcp_integration_client.md) — Technical deep-dive on context injection.
 
 ---
 
 ## 🧹 Security & Environment
-All sensitive configurations are managed via `.env` in the `backend/` directory. **Never** hardcode keys. Reference the `.env.example` for the required keys: `GEMINI_API_KEY`, `STREAM_API_KEY`, `ELEVENLABS_API_KEY`, and `DEEPGRAM_API_KEY`.
+All sensitive configurations are managed via `.env` in the `backend/` directory. Reference `.env.example` for required keys. 
+
+> [!IMPORTANT]
+> **Windows Users**: We have included a global DNS monkey-patch in `main.py` and `services/` to bypass the `aiodns` bug on local development networks.
 
 ---
 
-## � License & Attribution
+## 📜 License & Attribution
 **Project Owner**: BEASTSHRIRAM  
 **Engineered with ❤️ for the pursuit of gains.**
